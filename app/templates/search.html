@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Search {{ site.domain }}{% endblock %}
+
+{% block content %}
+<h1>Search {{ site.domain }}</h1>
+
+<div class="info">
+    <strong>Site:</strong> <a href="{{ site.url }}" target="_blank">{{ site.url }}</a>
+    &bull; <span class="status-badge status-{{ site.status }}">{{ site.status }}</span>
+    &bull; {{ site.page_count }} pages indexed
+</div>
+
+<form action="/site/{{ site.domain }}/search" method="GET">
+    <input 
+        type="search" 
+        name="q" 
+        value="{{ query }}" 
+        placeholder="Search {{ site.domain }}..." 
+        class="search-box"
+        autofocus
+        autocomplete="off"
+    >
+    <button type="submit">Search</button>
+</form>
+
+{% if results %}
+    <p style="color: #666; margin: 20px 0;">Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %} for "{{ query }}"</p>
+    
+    {% for result in results %}
+    <div class="result">
+        <h3><a href="{{ result.url }}" target="_blank">{{ result.title or 'Untitled' }}</a></h3>
+        <div class="url">{{ result.url }}</div>
+        <div class="snippet">{{ result.snippet|safe }}</div>
+    </div>
+    {% endfor %}
+    
+{% elif query %}
+    <div class="info">
+        <p><strong>No results found</strong> for "{{ query }}"</p>
+        <p>Try different keywords or check your spelling.</p>
+    </div>
+{% else %}
+    <p style="color: #666; margin: 20px 0;">
+        Enter a search query above to find content within {{ site.domain }}
+    </p>
+{% endif %}
+
+<div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+    <p><a href="/">← Back to all sites</a></p>
+</div>
+{% endblock %}

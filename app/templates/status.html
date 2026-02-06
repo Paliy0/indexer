@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}{{ domain }} - Status{% endblock %}
+
+{% block content %}
+<h1>{{ domain }}</h1>
+
+{% if site %}
+    <!-- Site exists, show status -->
+    
+    <div class="stats">
+        <div class="stat-box">
+            <div class="number">{{ site.page_count }}</div>
+            <div class="label">Pages Indexed</div>
+        </div>
+        <div class="stat-box">
+            <div class="label">Status</div>
+            <div style="margin-top: 10px;">
+                <span class="status-badge status-{{ site.status }}" style="font-size: 14px;">{{ site.status }}</span>
+            </div>
+        </div>
+    </div>
+    
+    {% if site.status == 'pending' %}
+        <div class="info">
+            <p><strong>Site is pending scraping.</strong></p>
+            <p>The indexing process hasn't started yet. This usually happens if the site was just added.</p>
+        </div>
+    {% elif site.status == 'scraping' %}
+        <div class="info">
+            <p><strong>Scraping in progress...</strong></p>
+            <p>Please wait while we index the pages. This may take a few minutes depending on the site size.</p>
+            <p style="margin-top: 15px;">
+                <button onclick="location.reload()">Refresh Status</button>
+            </p>
+        </div>
+    {% elif site.status == 'completed' %}
+        <div class="success">
+            <p><strong>Indexing complete!</strong></p>
+            <p>Successfully indexed {{ site.page_count }} pages from {{ domain }}.</p>
+            {% if site.last_scraped %}
+                <p>Last scraped: {{ site.last_scraped }}</p>
+            {% endif %}
+        </div>
+        
+        <div style="margin: 30px 0;">
+            <a href="/site/{{ domain }}/search" class="button">Search This Site</a>
+        </div>
+        
+        <h3>Re-index Site</h3>
+        <p>Want to update the index with fresh content?</p>
+        <form action="/site/{{ domain }}/scrape" method="POST" style="margin-top: 15px;">
+            <input type="hidden" name="url" value="{{ site.url }}">
+            <button type="submit">Re-scrape {{ domain }}</button>
+        </form>
+        
+    {% elif site.status == 'failed' %}
+        <div class="error">
+            <p><strong>Scraping failed!</strong></p>
+            <p>There was an error while trying to index this site. This could be due to:</p>
+            <ul style="margin-top: 10px; margin-left: 20px;">
+                <li>The site is unreachable or blocking scraping</li>
+                <li>Network timeout or connection issues</li>
+                <li>Invalid site structure or malformed HTML</li>
+            </ul>
+        </div>
+        
+        <h3>Try Again</h3>
+        <form action="/site/{{ domain }}/scrape" method="POST" style="margin-top: 15px;">
+            <input type="hidden" name="url" value="{{ site.url }}">
+            <button type="submit">Retry Scraping</button>
+        </form>
+    {% endif %}
+    
+    <div style="margin-top: 40px;">
+        <h3>Site Details</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 10px; font-weight: 500;">URL:</td>
+                <td style="padding: 10px;"><a href="{{ site.url }}" target="_blank">{{ site.url }}</a></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 10px; font-weight: 500;">Domain:</td>
+                <td style="padding: 10px;">{{ site.domain }}</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 10px; font-weight: 500;">Created:</td>
+                <td style="padding: 10px;">{{ site.created_at }}</td>
+            </tr>
+            {% if site.last_scraped %}
+            <tr style="border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 10px; font-weight: 500;">Last Scraped:</td>
+                <td style="padding: 10px;">{{ site.last_scraped }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+
+{% else %}
+    <!-- Site doesn't exist yet, show setup form -->
+    
+    <div class="info">
+        <p><strong>This site hasn't been indexed yet.</strong></p>
+        <p>Start indexing {{ domain }} to make it searchable.</p>
+    </div>
+    
+    <h2>Start Indexing</h2>
+    <form action="/site/{{ domain }}/scrape" method="POST">
+        <label for="url">Confirm URL to scrape:</label>
+        <input 
+            type="url" 
+            id="url" 
+            name="url" 
+            value="{{ url }}" 
+            required
+            placeholder="https://{{ domain }}"
+        >
+        <button type="submit">Start Scraping</button>
+    </form>
+    
+    <div style="margin-top: 30px; padding: 20px; background-color: #f9f9f9; border-radius: 4px;">
+        <h3 style="margin-top: 0;">What happens next?</h3>
+        <ol style="line-height: 2;">
+            <li>Our scraper will visit the site and discover all linked pages</li>
+            <li>Text content from each page will be extracted and indexed</li>
+            <li>Once complete, you'll be able to search all indexed content</li>
+            <li>This process typically takes a few minutes depending on site size</li>
+        </ol>
+    </div>
+    
+{% endif %}
+
+<div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+    <p><a href="/">← Back to all sites</a></p>
+</div>
+{% endblock %}

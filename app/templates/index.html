@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Site Search Platform - Home{% endblock %}
+
+{% block content %}
+<h1>Welcome to Site Search Platform</h1>
+<p>Create searchable indexes of any website. Enter a URL below to get started.</p>
+
+{% if error %}
+<div class="error">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<form action="/scrape" method="POST">
+    <label for="url">Enter website URL to index:</label>
+    <input 
+        type="url" 
+        id="url" 
+        name="url" 
+        placeholder="https://example.com" 
+        required
+        autocomplete="url"
+    >
+    <button type="submit">Start Indexing</button>
+</form>
+
+<h2>Indexed Sites</h2>
+
+{% if sites %}
+    <ul class="site-list">
+    {% for site in sites %}
+        <li>
+            <a href="/site/{{ site.domain }}/search">{{ site.domain }}</a>
+            <div class="meta">
+                <span class="status-badge status-{{ site.status }}">{{ site.status }}</span>
+                &bull; {{ site.page_count }} pages
+                {% if site.last_scraped %}
+                    &bull; Last scraped: {{ site.last_scraped }}
+                {% endif %}
+            </div>
+        </li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p class="info">No sites indexed yet. Enter a URL above to create your first searchable index.</p>
+{% endif %}
+
+<div style="margin-top: 40px;">
+    <h3>How it works:</h3>
+    <ol style="line-height: 2;">
+        <li>Enter the URL of a website you want to make searchable</li>
+        <li>Our scraper will crawl the site and extract all text content</li>
+        <li>Content is indexed and made searchable via full-text search</li>
+        <li>Search your indexed sites instantly from the site-specific search page</li>
+    </ol>
+</div>
+{% endblock %}
