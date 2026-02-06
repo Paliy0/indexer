@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+*.egg
+
+# Environment
+.env
+.env.local
+
+# Data
+data/
+*.db
+*.sqlite3
+
+# Go binary
+web-parser/web-parser
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ralph
+.ralph/
+ralph.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/Coverage
+htmlcov/
+.coverage
+.pytest_cache/
+.tox/
+
+# Meilisearch data
+meili_data/
+data.ms/
+
+# Docker volumes
+postgres_data/
+redis_data/

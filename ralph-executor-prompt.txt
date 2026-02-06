@@ -1,0 +1,68 @@
+You are implementing the Site Search Platform, a hosted service that creates searchable indexes of any website.
+Working directory: /home/ubuntu/indexer
+
+PROJECT CONTEXT:
+- docs/ contains comprehensive documentation for all 5 development phases
+- web-parser/ contains a complete Go web scraper tool that you will integrate as a subprocess
+- The task file (.ralph/ralph-tasks.md) is organized into phases. Complete ALL tasks within a phase before committing.
+- A Python virtual environment is already activated at /home/ubuntu/indexer/venv — use pip install directly
+
+REFERENCE DOCUMENTATION:
+- docs/phases/phase-01-foundation.md — Phase 1 implementation guide with code snippets and directory structure
+- docs/phases/phase-02-search-engine.md — Phase 2: PostgreSQL + Meilisearch + HTMX
+- docs/phases/phase-03-wildcard-domains.md — Phase 3: Celery + Redis + SSE + subdomain routing
+- docs/phases/phase-04-advanced-features.md — Phase 4: API keys, exports, analytics
+- docs/phases/phase-05-scale.md — Phase 5: Docker, health checks, metrics
+- docs/architecture/database-schema.md — Database schema reference
+- docs/api/api-reference.md — API specification
+- docs/testing/testing-strategy.md — Testing approach
+
+WORKFLOW FOR EACH PHASE:
+1. Read .ralph/ralph-tasks.md and identify the current phase (first phase with unchecked tasks)
+2. Read the corresponding docs/phases/phase-XX-*.md documentation thoroughly before writing any code
+3. Work through each task in the phase sequentially:
+   a. Read relevant existing files before making changes
+   b. Implement the task following the documentation closely
+   c. After each task, do a quick sanity check (imports resolve, no syntax errors)
+4. After ALL tasks in the phase are done, run the full test suite: python -m pytest -v
+5. Fix any test failures (max 3 attempts per failure, then skip with a comment explaining why)
+6. Once all tests pass, commit and push the entire phase:
+   git add -A && git commit --author="Ralph AI <pabloguliasprats@gmail.com>" -m "Phase X: [phase title from task file]" && git push origin main
+7. Mark ALL tasks in that phase as done by changing "- [ ]" to "- [x]" on each line
+8. Say READY_FOR_NEXT_TASK
+
+RULES FOR EDITING THE TASK FILE:
+- Use the Edit tool to change "- [ ]" to "- [x]" for each completed task line
+- Match the EXACT text of the checkbox line including the task description
+- If the edit fails after 2 attempts, SKIP marking and move on
+- NEVER rewrite the entire task file — only edit individual checkbox lines
+
+RULES FOR CODE:
+- app/ is the Python application directory — all application code goes here
+- web-parser/ is the existing Go tool — do NOT modify its source code
+- Use the documentation code snippets as a starting point but adapt as needed for correctness
+- Install Python packages with: pip install <package> && pip freeze > requirements.txt (or manually update requirements.txt)
+- Install system packages with: sudo apt-get install -y <package>
+- Always keep requirements.txt up to date when adding dependencies
+- Run python -m pytest -v after implementing each phase
+- If stuck on a task for more than 3 attempts, skip it and add a TODO comment explaining the issue
+
+RULES FOR INFRASTRUCTURE:
+- Build the web-parser Go binary: cd /home/ubuntu/indexer/web-parser && go build -o web-parser . && cd /home/ubuntu/indexer
+- For PostgreSQL: use "sudo -u postgres psql" to run SQL commands for creating databases and users
+- For Redis: sudo apt-get install -y redis-server && sudo systemctl start redis-server
+- For Meilisearch: download the binary from GitHub releases for linux-amd64
+- All infrastructure setup commands should be idempotent (safe to run multiple times)
+
+RULES FOR GIT:
+- The git repo and GitHub remote are already set up by the run script
+- Always use: git add -A && git commit --author="Ralph AI <pabloguliasprats@gmail.com>" -m "message" && git push origin main
+- One commit per phase — do NOT commit individual tasks within a phase
+- If git push fails, try: git pull --rebase origin main && git push origin main
+
+IMPORTANT:
+- Do NOT create deployment configs (systemd services, Kubernetes manifests, Helm charts, production Nginx SSL certs)
+- DO create Docker Compose for local development and a Dockerfile for the application
+- DO create nginx config files as reference templates (not for deployment)
+- Focus on making the tool work locally and be publishable on GitHub
+- Keep changes working and testable at each phase boundary
