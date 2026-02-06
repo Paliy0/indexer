@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     debug: bool = True
     host: str = "0.0.0.0"
     port: int = 8000
+    
+    # Meilisearch (Phase 2+)
+    meilisearch_host: str = "http://127.0.0.1:7700"
+    meili_master_key: str = "your-development-master-key"
 
 
 @lru_cache()

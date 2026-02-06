@@ -11,40 +11,30 @@
     &bull; {{ site.page_count }} pages indexed
 </div>
 
-<form action="/site/{{ site.domain }}/search" method="GET">
+<form hx-get="/api/search/partial"
+      hx-trigger="keyup changed delay:300ms from:#search-input, submit"
+      hx-target="#search-results"
+      hx-indicator="#loading-indicator">
     <input 
         type="search" 
         name="q" 
+        id="search-input"
         value="{{ query }}" 
         placeholder="Search {{ site.domain }}..." 
         class="search-box"
         autofocus
         autocomplete="off"
     >
+    <input type="hidden" name="site_id" value="{{ site.id }}">
     <button type="submit">Search</button>
+    <span id="loading-indicator" class="htmx-indicator">
+        <span class="loading-spinner"></span>
+    </span>
 </form>
 
-{% if results %}
-    <p style="color: #666; margin: 20px 0;">Found <strong>{{ results|length }}</strong> result{% if results|length != 1 %}s{% endif %} for "{{ query }}"</p>
-    
-    {% for result in results %}
-    <div class="result">
-        <h3><a href="{{ result.url }}" target="_blank">{{ result.title or 'Untitled' }}</a></h3>
-        <div class="url">{{ result.url }}</div>
-        <div class="snippet">{{ result.snippet|safe }}</div>
-    </div>
-    {% endfor %}
-    
-{% elif query %}
-    <div class="info">
-        <p><strong>No results found</strong> for "{{ query }}"</p>
-        <p>Try different keywords or check your spelling.</p>
-    </div>
-{% else %}
-    <p style="color: #666; margin: 20px 0;">
-        Enter a search query above to find content within {{ site.domain }}
-    </p>
-{% endif %}
+<div id="search-results">
+    {% include "partials/search_results.html" %}
+</div>
 
 <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0;">
     <p><a href="/">← Back to all sites</a></p>

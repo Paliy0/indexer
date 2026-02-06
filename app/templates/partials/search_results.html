@@ -1,0 +1,25 @@
+{% if results %}
+    <p style="color: #666; margin: 20px 0;">
+        Found <strong>{{ total_results if total_results is defined else results|length }}</strong> result{% if (total_results if total_results is defined else results|length) != 1 %}s{% endif %} 
+        {% if query %}for "{{ query }}"{% endif %}
+        {% if processing_time_ms is defined %} in {{ processing_time_ms }}ms{% endif %}
+    </p>
+    
+    {% for result in results %}
+    <div class="result">
+        <h3><a href="{{ result.url }}" target="_blank">{{ result.title if result.title else 'Untitled' }}</a></h3>
+        <div class="url">{{ result.url }}</div>
+        <div class="snippet">{{ result.snippet|safe }}</div>
+    </div>
+    {% endfor %}
+    
+{% elif query %}
+    <div class="info">
+        <p><strong>No results found</strong> for "{{ query }}"</p>
+        <p>Try different keywords or check your spelling.</p>
+    </div>
+{% else %}
+    <p style="color: #666; margin: 20px 0;">
+        Enter a search query above to find content
+    </p>
+{% endif %}

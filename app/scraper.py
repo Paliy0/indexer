@@ -4,7 +4,8 @@ Web scraper wrapper for the Go web-parser binary
 
 import json
 import subprocess
-from typing import List, Dict, Any, Optional
+import asyncio
+from typing import List, Dict, Any, Optional, Callable, AsyncIterator
 from pathlib import Path
 
 
@@ -201,3 +202,147 @@ class WebParser:
         else:
             # Return single page as a list for consistent interface
             return [self.scrape_page(url)]
+    
+    async def async_scrape(
+        self,
+        url: str,
+        crawl: bool = True,
+        max_depth: int = 2,
+        progress_callback: Optional[Callable[[int, str], None]] = None
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """
+        Async scrape a URL and stream pages as they're found.
+        
+        Args:
+            url: URL to scrape
+            crawl: Whether to crawl related pages (default: True)
+            max_depth: Maximum crawl depth if crawl=True (default: 2)
+            progress_callback: Optional callback(page_count, current_url) called for each page
+            
+        Yields:
+            Dict with keys: url, title, content for each page found
+            
+        Raises:
+            TimeoutError: If scraping times out
+            ScrapingError: If scraping fails
+            ValueError: If output cannot be parsed
+        """
+        # Validate max_depth if crawling
+        if crawl and not 1 <= max_depth <= 5:
+            raise ValueError(f"max_depth must be between 1 and 5, got {max_depth}")
+        
+        # Build command
+        cmd = [
+            str(self.binary_path),
+            "-url", url,
+            "-format", "json",
+            "-no-progress"
+        ]
+        
+        if crawl:
+            cmd.extend(["-crawl", "-max-depth", str(max_depth)])
+        
+        # Start subprocess
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            
+            # Ensure stdout is available
+            if proc.stdout is None:
+                raise ScrapingError("Failed to capture stdout from web-parser")
+            
+            # Read output in chunks and try to parse JSON incrementally
+            stdout_data = b""
+            page_count = 0
+            
+            # Read stdout until process completes
+            while True:
+                try:
+                    # Read with timeout
+                    chunk = await asyncio.wait_for(
+                        proc.stdout.read(8192),
+                        timeout=self.timeout
+                    )
+                    
+                    if not chunk:
+                        # EOF reached
+                        break
+                    
+                    stdout_data += chunk
+                    
+                    # Try to parse JSON to see if we have complete output
+                    try:
+                        output_str = stdout_data.decode('utf-8')
+                        json_str = self._extract_json(output_str)
+                        
+                        if json_str:
+                            data = json.loads(json_str)
+                            pages = data.get("pages", [])
+                            
+                            # Yield any new pages we haven't seen yet
+                            if len(pages) > page_count:
+                                for page in pages[page_count:]:
+                                    page_count += 1
+                                    
+                                    # Call progress callback if provided
+                                    if progress_callback:
+                                        progress_callback(page_count, page.get("url", ""))
+                                    
+                                    yield page
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        # Not enough data yet or invalid JSON, continue reading
+                        continue
+                        
+                except asyncio.TimeoutError:
+                    # Kill process if timeout exceeded
+                    proc.kill()
+                    await proc.wait()
+                    raise TimeoutError(f"Scraping {url} timed out after {self.timeout} seconds")
+            
+            # Wait for process to complete
+            returncode = await proc.wait()
+            
+            if returncode != 0:
+                stderr_data = b""
+                if proc.stderr:
+                    stderr_data = await proc.stderr.read()
+                raise ScrapingError(
+                    f"web-parser failed with code {returncode}: {stderr_data.decode('utf-8', errors='ignore')}"
+                )
+            
+            # Final parse to ensure we got all pages
+            if stdout_data:
+                output_str = stdout_data.decode('utf-8')
+                json_str = self._extract_json(output_str)
+                
+                if json_str:
+                    data = json.loads(json_str)
+                    pages = data.get("pages", [])
+                    
+                    # Yield any remaining pages
+                    if len(pages) > page_count:
+                        for page in pages[page_count:]:
+                            page_count += 1
+                            
+                            if progress_callback:
+                                progress_callback(page_count, page.get("url", ""))
+                            
+                            yield page
+                    
+                    # Ensure we got at least one page
+                    if page_count == 0:
+                        raise ValueError("No pages found in web-parser output")
+                else:
+                    raise ValueError("No valid JSON found in web-parser output")
+                    
+        except asyncio.CancelledError:
+            # Handle task cancellation
+            if proc and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            raise
+
