@@ -18,14 +18,15 @@ cd site-search
 
 ### 2. Build Web Parser (Go Tool)
 
+The indexer uses [web-parser](https://github.com/Paliy0/web-parser), an open-source Go library for web scraping. Build the CLI binary:
+
 ```bash
 cd web-parser
-go build -o web-parser main.go
+go build -o web-parser ./cmd/web-parser
 cd ..
 
-# Copy binary to project root
-cp web-parser/web-parser .
-chmod +x web-parser
+# Verify the binary works
+./web-parser/web-parser -h
 ```
 
 ### 3. Python Environment Setup
@@ -313,10 +314,10 @@ site-search/
 
 **Solution:**
 ```bash
-# Build the binary
-cd web-parser && go build -o web-parser main.go
+# Build the binary (web-parser is now a library with CLI in cmd/web-parser)
+cd web-parser && go build -o web-parser ./cmd/web-parser
 cd ..
-cp web-parser/web-parser .
+./web-parser/web-parser -h
 ```
 
 ### Issue: Database locked (SQLite)

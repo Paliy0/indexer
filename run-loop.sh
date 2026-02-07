@@ -41,7 +41,8 @@ else
 fi
 
 echo "=== Starting Ralph Loop ==="
-echo "Model:          github-copilot/claude-sonnet-4.5"
+echo "Provider:       openrouter"
+echo "Model:          deepseek/deepseek-v3.2"
 echo "Max iterations: 30"
 echo "Task promise:   READY_FOR_NEXT_TASK"
 echo "Log file:       $PROJECT_DIR/ralph.log"
@@ -50,7 +51,7 @@ echo ""
 # Step 4: Run Ralph
 ralph --prompt-file "$PROJECT_DIR/ralph-executor-prompt.txt" \
   --agent opencode \
-  --model github-copilot/claude-sonnet-4.5 \
+  --model openrouter/deepseek/deepseek-v3.2 \
   --tasks \
   --task-promise READY_FOR_NEXT_TASK \
   --max-iterations 30 \

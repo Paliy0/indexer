@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Meilisearch (Phase 2+)
     meilisearch_host: str = "http://127.0.0.1:7700"
     meili_master_key: str = "your-development-master-key"
+    
+    # Subdomain routing (Phase 3+)
+    base_domain: str = ""  # e.g., "example.com" - leave empty to disable subdomain routing
 
 
 @lru_cache()

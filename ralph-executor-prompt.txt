@@ -48,7 +48,7 @@ RULES FOR CODE:
 - If stuck on a task for more than 3 attempts, skip it and add a TODO comment explaining the issue
 
 RULES FOR INFRASTRUCTURE:
-- Build the web-parser Go binary: cd /home/ubuntu/indexer/web-parser && go build -o web-parser . && cd /home/ubuntu/indexer
+- Build the web-parser Go binary: cd /home/ubuntu/indexer/web-parser && go build -o web-parser ./cmd/web-parser && cd /home/ubuntu/indexer
 - For PostgreSQL: use "sudo -u postgres psql" to run SQL commands for creating databases and users
 - For Redis: sudo apt-get install -y redis-server && sudo systemctl start redis-server
 - For Meilisearch: download the binary from GitHub releases for linux-amd64

@@ -4,7 +4,7 @@ FastAPI application entry point with PostgreSQL + Meilisearch support
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Form, HTTPException, status, Depends, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, HttpUrl, Field, field_validator
 from typing import Optional, List
@@ -12,12 +12,16 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update as sql_update
 from datetime import datetime
+import asyncio
+import json
+import redis.asyncio as aioredis
 
 from app.config import get_settings
 from app.db import get_db, init_db as async_init_db
 from app.models import Site, Page
 from app.scraper import WebParser, ScrapingError
 from app.meilisearch_engine import MeiliSearchEngine
+from app.middleware import SubdomainMiddleware
 
 # Legacy imports for SQLite fallback
 from app.database import (
@@ -83,6 +87,13 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan
 )
+
+# Add subdomain middleware if base_domain is configured
+if settings.base_domain:
+    app.add_middleware(
+        SubdomainMiddleware,
+        base_domain=settings.base_domain
+    )
 
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
@@ -618,14 +629,226 @@ async def status_endpoint():
         )
 
 
+@app.get("/api/sites/{site_id}/progress/stream")
+async def progress_stream(site_id: int):
+    """
+    Server-Sent Events (SSE) endpoint for real-time scraping progress.
+    
+    Polls Redis for progress data every 1 second and yields SSE events.
+    Closes stream when scraping completes or fails.
+    
+    Args:
+        site_id: Database ID of the site being scraped
+        
+    Returns:
+        StreamingResponse with text/event-stream content type
+    """
+    async def event_generator():
+        """Generate SSE events from Redis progress data."""
+        # Connect to Redis
+        redis_client = await aioredis.from_url("redis://localhost:6379/0")
+        progress_key = f"scrape_progress:{site_id}"
+        
+        try:
+            while True:
+                # Get progress data from Redis hash
+                progress_data = await redis_client.hgetall(progress_key)
+                
+                if progress_data:
+                    # Decode bytes to strings
+                    progress = {
+                        k.decode('utf-8'): v.decode('utf-8') 
+                        for k, v in progress_data.items()
+                    }
+                    
+                    # Build event data
+                    event_data = {
+                        "pages_found": int(progress.get("pages_found", 0)),
+                        "current_url": progress.get("current_url", ""),
+                        "status": progress.get("status", "scraping"),
+                        "updated_at": progress.get("updated_at", "")
+                    }
+                    
+                    # Check if scraping is complete or failed
+                    status_value = progress.get("status", "scraping")
+                    if status_value in ["completed", "failed"]:
+                        event_data["done"] = True
+                        # Send final event
+                        yield f"data: {json.dumps(event_data)}\n\n"
+                        break
+                    
+                    # Send progress event
+                    yield f"data: {json.dumps(event_data)}\n\n"
+                else:
+                    # No progress data yet, send initial event
+                    yield f"data: {json.dumps({'status': 'waiting', 'pages_found': 0})}\n\n"
+                
+                # Poll every 1 second
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            # Send error event
+            error_data = {
+                "error": str(e),
+                "status": "error",
+                "done": True
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+        finally:
+            # Close Redis connection
+            await redis_client.close()
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable buffering in nginx
+        }
+    )
+
+
 # Template Routes
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """
-    Landing page with scrape form and site list
+    Root endpoint with subdomain-based routing.
+    
+    If subdomain present: Look up site by domain and route based on status:
+        - Site not found: Show setup/scrape page
+        - Site status=scraping: Show progress page
+        - Site status=completed: Show search page
+        - Site status=failed/pending: Show status page
+    
+    If no subdomain: Show landing page with site list
     """
     try:
+        # Check if this is a subdomain request
+        is_subdomain = getattr(request.state, 'is_subdomain', False)
+        subdomain = getattr(request.state, 'subdomain', None)
+        
+        if is_subdomain and subdomain:
+            # Subdomain routing: look up site by domain (subdomain is the domain)
+            if USE_POSTGRES:
+                async for db in get_db():
+                    try:
+                        # Look up site by domain matching the subdomain
+                        result = await db.execute(
+                            select(Site).where(Site.domain == subdomain)
+                        )
+                        site_orm = result.scalar_one_or_none()
+                        
+                        if not site_orm:
+                            # Site not found - show setup/scrape page
+                            return templates.TemplateResponse(
+                                request=request,
+                                name="status.html",
+                                context={
+                                    "domain": subdomain,
+                                    "site": None,
+                                    "url": f"https://{subdomain}"
+                                }
+                            )
+                        
+                        # Convert to dict for template
+                        site = {
+                            'id': site_orm.id,
+                            'url': site_orm.url,
+                            'domain': site_orm.domain,
+                            'status': site_orm.status,
+                            'page_count': site_orm.page_count,
+                            'last_scraped': site_orm.last_scraped.isoformat() if site_orm.last_scraped else None,
+                            'created_at': site_orm.created_at.isoformat()
+                        }
+                        
+                        # Route based on site status
+                        if site['status'] == 'scraping':
+                            # Show progress page
+                            return templates.TemplateResponse(
+                                request=request,
+                                name="status.html",
+                                context={
+                                    "domain": subdomain,
+                                    "site": site
+                                }
+                            )
+                        elif site['status'] == 'completed':
+                            # Show search page
+                            return templates.TemplateResponse(
+                                request=request,
+                                name="search.html",
+                                context={
+                                    "site": site,
+                                    "query": "",
+                                    "results": []
+                                }
+                            )
+                        else:
+                            # Show status page for pending/failed
+                            return templates.TemplateResponse(
+                                request=request,
+                                name="status.html",
+                                context={
+                                    "domain": subdomain,
+                                    "site": site
+                                }
+                            )
+                    finally:
+                        break
+            else:
+                # SQLite fallback
+                db_path = settings.database_url.replace("sqlite:///", "")
+                site = sqlite_get_site_by_domain(subdomain, db_path)
+                
+                if not site:
+                    # Site not found - show setup/scrape page
+                    return templates.TemplateResponse(
+                        request=request,
+                        name="status.html",
+                        context={
+                            "domain": subdomain,
+                            "site": None,
+                            "url": f"https://{subdomain}"
+                        }
+                    )
+                
+                # Route based on site status
+                if site['status'] == 'scraping':
+                    # Show progress page
+                    return templates.TemplateResponse(
+                        request=request,
+                        name="status.html",
+                        context={
+                            "domain": subdomain,
+                            "site": site
+                        }
+                    )
+                elif site['status'] == 'completed':
+                    # Show search page
+                    return templates.TemplateResponse(
+                        request=request,
+                        name="search.html",
+                        context={
+                            "site": site,
+                            "query": "",
+                            "results": []
+                        }
+                    )
+                else:
+                    # Show status page for pending/failed
+                    return templates.TemplateResponse(
+                        request=request,
+                        name="status.html",
+                        context={
+                            "domain": subdomain,
+                            "site": site
+                        }
+                    )
+        
+        # No subdomain - show landing page with site list
+        sites = []
         if USE_POSTGRES:
             async for db in get_db():
                 try:
@@ -660,6 +883,10 @@ async def index(request: Request):
         )
     except Exception as e:
         print(f"Error in index: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Fallback to landing page on error
         return templates.TemplateResponse(
             request=request,
             name="index.html",

@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: indexer_user
+      POSTGRES_PASSWORD: indexer_pass
+      POSTGRES_DB: indexer_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indexer_user -d indexer_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery broker and backend
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Meilisearch search engine
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-development-master-key-change-me}
+      MEILI_ENV: ${MEILI_ENV:-development}
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # FastAPI application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://indexer_user:indexer_pass@postgres:5432/indexer_db
+      REDIS_URL: redis://redis:6379/0
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-development-master-key-change-me}
+      WEB_PARSER_PATH: /app/web-parser/web-parser
+      DEBUG: ${DEBUG:-True}
+      HOST: 0.0.0.0
+      PORT: 8000
+      BASE_DOMAIN: ${BASE_DOMAIN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    volumes:
+      # Mount app directory for development hot reload
+      - ./app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery worker for background tasks
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: postgresql+asyncpg://indexer_user:indexer_pass@postgres:5432/indexer_db
+      REDIS_URL: redis://redis:6379/0
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-development-master-key-change-me}
+      WEB_PARSER_PATH: /app/web-parser/web-parser
+      DEBUG: ${DEBUG:-True}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    volumes:
+      # Mount app directory for development
+      - ./app:/app/app
+
+  # Celery beat for scheduled tasks
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://indexer_user:indexer_pass@postgres:5432/indexer_db
+      REDIS_URL: redis://redis:6379/0
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-development-master-key-change-me}
+      WEB_PARSER_PATH: /app/web-parser/web-parser
+      DEBUG: ${DEBUG:-True}
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount app directory for development
+      - ./app:/app/app
+
+# Named volumes for data persistence
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  meilisearch_data:
+    driver: local
