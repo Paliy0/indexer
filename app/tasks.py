@@ -7,10 +7,12 @@ including progress tracking, database storage, and search indexing.
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC, UTC, timezone
 from typing import Dict, Any
 from celery.exceptions import MaxRetriesExceededError
 import redis
+from app.metrics import track_scrape_start, track_scrape_complete, track_scrape_failed
+from app.metrics import track_scrape_start, track_scrape_complete, track_scrape_failed
 
 from app.celery_app import celery_app
 from app.db import AsyncSessionLocal
@@ -64,11 +66,15 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
     
     async with AsyncSessionLocal() as db:
         try:
+            # Track scrape start in metrics
+            start_time = track_scrape_start()
+            
             # Get site details
             result = await db.execute(select(Site).where(Site.id == site_id))
             site = result.scalar_one_or_none()
             
             if not site:
+                track_scrape_failed(start_time)
                 raise ValueError(f"Site {site_id} not found")
             
             # Update site status to scraping
@@ -85,7 +91,7 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
                     "pages_found": 0,
                     "current_url": site.url,
                     "status": "scraping",
-                    "updated_at": datetime.utcnow().isoformat()
+                    "updated_at": datetime.now(UTC).isoformat()
                 }
             )
             redis_client.expire(progress_key, 3600)  # 1 hour TTL
@@ -112,7 +118,7 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
                         "pages_found": count,
                         "current_url": url,
                         "status": "scraping",
-                        "updated_at": datetime.utcnow().isoformat()
+                        "updated_at": datetime.now(UTC).isoformat()
                     }
                 )
                 redis_client.expire(progress_key, 3600)  # Refresh TTL
@@ -170,8 +176,11 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
             # Update site status to completed
             site.status = "completed"
             site.page_count = page_count
-            site.last_scraped = datetime.utcnow()
+            site.last_scraped = datetime.now(UTC)
             await db.commit()
+            
+            # Track scrape completion in metrics
+            track_scrape_complete(start_time)
             
             # Update final progress in Redis
             redis_client.hset(
@@ -180,7 +189,7 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
                     "pages_found": page_count,
                     "current_url": "",
                     "status": "completed",
-                    "updated_at": datetime.utcnow().isoformat()
+                    "updated_at": datetime.now(UTC).isoformat()
                 }
             )
             redis_client.expire(progress_key, 3600)
@@ -192,6 +201,9 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
             }
             
         except Exception as exc:
+            # Track scrape failure in metrics
+            track_scrape_failed(start_time)
+            
             # Update site status to failed
             try:
                 result = await db.execute(select(Site).where(Site.id == site_id))
@@ -207,7 +219,7 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
                         "pages_found": page_count,
                         "current_url": "",
                         "status": "failed",
-                        "updated_at": datetime.utcnow().isoformat()
+                        "updated_at": datetime.now(UTC).isoformat()
                     }
                 )
                 redis_client.expire(progress_key, 3600)
@@ -246,7 +258,7 @@ async def _check_auto_reindex_async():
     reindex_interval_days, then queues scrape_site_task.delay(site_id) for each.
     """
     import logging
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, UTC, UTC
     from sqlalchemy import select, and_
     
     logger = logging.getLogger(__name__)
@@ -274,7 +286,7 @@ async def _check_auto_reindex_async():
             
             # Process each site to check if re-index is due
             sites_to_reindex = []
-            utc_now = datetime.utcnow()
+            utc_now = datetime.now(UTC)
             
             for site in sites:
                 try:

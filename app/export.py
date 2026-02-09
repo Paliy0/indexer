@@ -13,7 +13,7 @@ import csv
 import json
 import io
 from typing import Dict, List, Any, AsyncIterator
-from datetime import datetime
+from datetime import datetime, UTC, UTC
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -82,7 +82,7 @@ class Exporter:
             pages_data.append(page_data)
         
         return {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "site": {
                 "id": site.id,
                 "url": site.url,
@@ -117,7 +117,7 @@ class Exporter:
             JSON chunks
         """
         # Yield start of JSON
-        yield '{"exported_at": "' + datetime.utcnow().isoformat() + '",'
+        yield '{"exported_at": "' + datetime.now(UTC).isoformat() + '",'
         yield '"site": {'
         yield f'"id": {site.id},'
         yield f'"url": "{site.url}",'
@@ -284,7 +284,7 @@ class Exporter:
         lines = [
             f"# Export: {site.domain}",
             "",
-            f"Exported: {datetime.utcnow().isoformat()}",
+            f"Exported: {datetime.now(UTC).isoformat()}",
             f"Total pages: {len(pages)}",
             f"Site URL: {site.url}",
             f"Status: {site.status}",
@@ -338,7 +338,7 @@ class Exporter:
         """
         # Yield header
         yield f"# Export: {site.domain}\n\n"
-        yield f"Exported: {datetime.utcnow().isoformat()}\n"
+        yield f"Exported: {datetime.now(UTC).isoformat()}\n"
         yield f"Total pages: "  # Placeholder
         yield f"Site URL: {site.url}\n"
         yield f"Status: {site.status}\n\n"

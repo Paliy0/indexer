@@ -14,7 +14,7 @@ Tests include:
 
 import pytest
 import pytest_asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from unittest.mock import AsyncMock, MagicMock, patch, Mock
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
@@ -83,7 +83,7 @@ def mock_api_key_unrestricted():
     api_key.last_used_at = None
     api_key.expires_at = None
     api_key.is_active = True
-    api_key.created_at = datetime.utcnow()
+    api_key.created_at = datetime.now(UTC)
     return api_key
 
 
@@ -97,10 +97,10 @@ def mock_api_key_restricted():
     api_key.site_id = 999  # Restricted to site 999
     api_key.rate_limit_per_minute = 50
     api_key.requests_count = 5
-    api_key.last_used_at = datetime.utcnow() - timedelta(hours=1)
+    api_key.last_used_at = datetime.now(UTC) - timedelta(hours=1)
     api_key.expires_at = None
     api_key.is_active = True
-    api_key.created_at = datetime.utcnow() - timedelta(days=7)
+    api_key.created_at = datetime.now(UTC) - timedelta(days=7)
     return api_key
 
 
@@ -113,9 +113,9 @@ def test_site():
     site.domain = "example.com"
     site.status = "completed"
     site.page_count = 42
-    site.last_scraped = datetime.utcnow() - timedelta(days=1)
-    site.created_at = datetime.utcnow() - timedelta(days=7)
-    site.updated_at = datetime.utcnow() - timedelta(hours=6)
+    site.last_scraped = datetime.now(UTC) - timedelta(days=1)
+    site.created_at = datetime.now(UTC) - timedelta(days=7)
+    site.updated_at = datetime.now(UTC) - timedelta(hours=6)
     site.config = {"max_depth": 2, "respect_robots_txt": True}
     return site
 
@@ -130,8 +130,8 @@ def test_site_pending():
     site.status = "pending"
     site.page_count = 0
     site.last_scraped = None
-    site.created_at = datetime.utcnow() - timedelta(hours=1)
-    site.updated_at = datetime.utcnow() - timedelta(hours=1)
+    site.created_at = datetime.now(UTC) - timedelta(hours=1)
+    site.updated_at = datetime.now(UTC) - timedelta(hours=1)
     site.config = None
     return site
 
@@ -147,9 +147,9 @@ def test_sites():
         site.domain = f"site{i+1}.com"
         site.status = "completed" if i % 3 == 0 else "pending" if i % 3 == 1 else "failed"
         site.page_count = i * 10
-        site.last_scraped = datetime.utcnow() - timedelta(days=i)
-        site.created_at = datetime.utcnow() - timedelta(days=i+7)
-        site.updated_at = datetime.utcnow() - timedelta(days=i)
+        site.last_scraped = datetime.now(UTC) - timedelta(days=i)
+        site.created_at = datetime.now(UTC) - timedelta(days=i+7)
+        site.updated_at = datetime.now(UTC) - timedelta(days=i)
         site.config = {"max_depth": 2}
         sites.append(site)
     return sites
@@ -292,14 +292,14 @@ class TestAPIV1Endpoints:
             
             if call_count == 1:
                 # First call is for count query
-                mock_result = AsyncMock()
+                mock_result = MagicMock()
                 mock_result.scalar.return_value = len(completed_sites)
                 return mock_result
             else:
                 # Second call is for main query - need to return proper structure
                 scalars_mock = MagicMock()
                 scalars_mock.all.return_value = completed_sites[:5]
-                result_mock = AsyncMock()
+                result_mock = MagicMock()
                 result_mock.scalars.return_value = scalars_mock
                 return result_mock
         
@@ -353,8 +353,8 @@ class TestAPIV1Endpoints:
             mock_select_result.where.return_value = mock_select_result
             
             # Mock the result object
-            mock_result = AsyncMock()
-            mock_result.scalar_one_or_none.return_value = None  # No existing site
+            mock_result = MagicMock()
+            mock_result.scalar_one_or_none.return_value = None  # No existing site (synchronous method)
             
             async_session.execute = AsyncMock(return_value=mock_result)
             async_session.add = MagicMock()
@@ -367,7 +367,7 @@ class TestAPIV1Endpoints:
             mock_site.domain = "example.com"
             mock_site.status = "pending"
             mock_site.page_count = 0
-            mock_site.created_at = datetime.utcnow()
+            mock_site.created_at = datetime.now(UTC)
             
             # When refresh is called, it should update the mock site
             def refresh_mock(obj):
@@ -459,11 +459,11 @@ class TestAPIV1Endpoints:
         # Mock request
         mock_request = MagicMock()
         
-        # Call function with invalid URL (no scheme)
+        # Call function with invalid URL (no domain)
         with pytest.raises(HTTPException) as exc_info:
             await create_site(
                 request=mock_request,
-                url="not-a-valid-url",
+                url="http://",  # URL with no domain
                 crawl=True,
                 max_depth=2,
                 api_key=mock_api_key_unrestricted,

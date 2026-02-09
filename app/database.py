@@ -3,7 +3,7 @@ Database operations for SQLite with FTS5
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC, UTC, timezone
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 

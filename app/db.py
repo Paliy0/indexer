@@ -7,6 +7,8 @@ from sqlalchemy.pool import NullPool
 from typing import AsyncGenerator
 from app.config import get_settings
 from app.models import Base
+from app.metrics import update_db_connections
+from app.metrics import update_db_connections
 
 settings = get_settings()
 
@@ -54,6 +56,18 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Yields:
         AsyncSession: Database session
     """
+    # Track active connection
+    try:
+        from sqlalchemy import inspect
+        # Get current connection count from engine pool
+        pool = engine.pool
+        if hasattr(pool, 'checkedin') and hasattr(pool, 'checkedout'):
+            active_connections = getattr(pool, 'checkedout', 0)
+            update_db_connections(active_connections)
+    except Exception:
+        # Don't fail if metrics tracking fails
+        pass
+    
     async with AsyncSessionLocal() as session:
         try:
             yield session

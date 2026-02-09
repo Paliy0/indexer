@@ -17,7 +17,7 @@ Usage:
 """
 
 import redis.asyncio as aioredis
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC, UTC
 from typing import Tuple, Optional
 from fastapi import Depends, HTTPException
 import time
@@ -55,26 +55,26 @@ class RateLimiter:
             - remaining: Number of requests remaining in current window
             - retry_after: Seconds until next request is allowed (if not allowed)
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         now_ts = now.timestamp()
         window_start_ts = now_ts - window_seconds
         
         redis_key = f"ratelimit:{key}"
         
         # Use pipeline for atomic operations
-        pipe = self.redis.pipeline()
+        pipe = await self.redis.pipeline()
         
         # Remove requests older than the window
-        pipe.zremrangebyscore(redis_key, 0, window_start_ts)
+        await pipe.zremrangebyscore(redis_key, 0, window_start_ts)
         
         # Count current requests in window
-        pipe.zcard(redis_key)
+        await pipe.zcard(redis_key)
         
         # Add current request timestamp
-        pipe.zadd(redis_key, {str(now_ts): now_ts})
+        await pipe.zadd(redis_key, {str(now_ts): now_ts})
         
         # Set expiry on the key (clean up after window passes)
-        pipe.expire(redis_key, window_seconds)
+        await pipe.expire(redis_key, window_seconds)
         
         # Execute pipeline
         results = await pipe.execute()
@@ -172,7 +172,7 @@ class RateLimiter:
         Returns:
             Dictionary with limit status
         """
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         now_ts = now.timestamp()
         window_start_ts = now_ts - window_seconds
         

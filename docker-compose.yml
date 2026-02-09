@@ -17,6 +17,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   # Redis for Celery broker and backend
   redis:
@@ -31,6 +32,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   # Meilisearch search engine
   meilisearch:
@@ -47,6 +49,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   # FastAPI application
   app:
@@ -72,6 +75,13 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
     volumes:
       # Mount app directory for development hot reload
       - ./app:/app/app
@@ -97,6 +107,13 @@ services:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
     volumes:
       # Mount app directory for development
       - ./app:/app/app
@@ -117,6 +134,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
     volumes:
       # Mount app directory for development
       - ./app:/app/app

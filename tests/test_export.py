@@ -66,6 +66,28 @@ def mock_db_session(mock_pages):
     async def execute_mock(query):
         # Check if this is a count query
         for_count = "count" in str(query).lower()
+        
+        # For streaming tests, we need to simulate batch behavior
+        # Check if this is a page query with offset/limit
+        if "offset" in str(query).lower() and "limit" in str(query).lower():
+            # For streaming, return empty batch after first batch to simulate completion
+            # Create a fresh result for each call
+            result_mock = AsyncMock()
+            scalars_mock = MagicMock()
+            
+            # Determine offset from query - crude but works for test
+            query_str = str(query).lower()
+            if "offset 0" in query_str or "offset=0" in query_str:
+                # First batch - return pages
+                scalars_mock.all = MagicMock(return_value=mock_pages)
+            else:
+                # Subsequent batches - return empty
+                scalars_mock.all = MagicMock(return_value=[])
+            
+            result_mock.scalars = MagicMock(return_value=scalars_mock)
+            return result_mock
+        
+        # Regular query
         return create_mock_result(for_count=for_count)
     
     session.execute = execute_mock

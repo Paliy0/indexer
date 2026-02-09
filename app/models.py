@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
-from datetime import datetime
+from datetime import datetime, UTC, UTC
 import json
 
 # Import SiteConfig from site_config module
@@ -19,7 +19,7 @@ Base = declarative_base()
 
 def get_default_config() -> Dict[str, Any]:
     """Get default configuration as a dictionary."""
-    return DEFAULT_CONFIG.dict()
+    return DEFAULT_CONFIG.model_dump()
 
 
 class Site(Base):

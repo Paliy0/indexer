@@ -11,7 +11,7 @@ from typing import Optional, List
 from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update as sql_update
-from datetime import datetime
+from datetime import datetime, UTC, UTC
 import asyncio
 import json
 import redis.asyncio as aioredis
@@ -27,6 +27,8 @@ from app.middleware import SubdomainMiddleware
 from app.site_config import SiteConfig, DEFAULT_CONFIG
 from app.api_v1 import router as api_v1_router
 from app.analytics import Analytics
+from app.health import router as health_router
+from app.metrics import PrometheusMiddleware, increment_search_query, update_db_connections, increment_search_query
 
 # Legacy imports for SQLite fallback
 from app.database import (
@@ -135,6 +137,12 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add Prometheus middleware for metrics collection
+app.add_middleware(PrometheusMiddleware)
+
+# Add Prometheus middleware for metrics collection
+app.add_middleware(PrometheusMiddleware)
+
 # Add subdomain middleware if base_domain is configured
 if settings.base_domain:
     app.add_middleware(
@@ -147,6 +155,12 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Mount API v1 router
 app.include_router(api_v1_router)
+
+# Mount health check endpoints
+app.include_router(health_router)
+
+# Mount health check endpoints
+app.include_router(health_router)
 
 
 # Pydantic models for API
@@ -346,7 +360,7 @@ async def update_site_status_async(
     if page_count is not None:
         values_to_update["page_count"] = page_count
     if status_value == "completed":
-        values_to_update["last_scraped"] = datetime.utcnow()
+        values_to_update["last_scraped"] = datetime.now(UTC)
     
     await db.execute(
         sql_update(Site)
@@ -535,8 +549,7 @@ async def search_endpoint(
     q: str = Query(..., min_length=1, description="Search query"),
     site_id: Optional[int] = Query(None, description="Filter by site ID"),
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    db: AsyncSession = Depends(get_db)
+    offset: int = Query(0, ge=0)
 ):
     """
     Search indexed pages
@@ -585,14 +598,21 @@ async def search_endpoint(
             # Log the search query for analytics
             try:
                 response_time_ms = results.get('processing_time_ms', 0)
-                await Analytics.log_search_query(
-                    db=db,
-                    query=q,
-                    results_count=results['total_hits'],
-                    response_time_ms=response_time_ms,
-                    site_id=site_id,
-                    ip_address=None  # Can get from request if needed
-                )
+                # Update Prometheus metrics
+                increment_search_query(site_id)
+                # Log to database for analytics
+                async for db_session in get_db():
+                    try:
+                        await Analytics.log_search_query(
+                            db=db,
+                            query=q,
+                            results_count=total_results,
+                            response_time_ms=response_time_ms,
+                            site_id=site_id,
+                            ip_address=None
+                        )
+                    finally:
+                        break
             except Exception as log_error:
                 # Don't fail the search if logging fails
                 print(f"Failed to log search query: {log_error}")
@@ -616,25 +636,19 @@ async def search_endpoint(
             # Use SQLite FTS5 fallback
             db_path = settings.database_url.replace("sqlite:///", "")
             search_engine = SQLiteSearchEngine(db_path)
-            results = search_engine.search(q, site_id=site_id, limit=limit)
+            search_results = search_engine.search(q, site_id=site_id, limit=limit)
             
-            # Log the search query for analytics
+            # Log the search query for analytics - skip for SQLite since we don't have async session
             try:
-                await Analytics.log_search_query(
-                    db=db,
-                    query=q,
-                    results_count=len(results),
-                    response_time_ms=None,  # SQLite doesn't track processing time
-                    site_id=site_id,
-                    ip_address=None
-                )
+                # Update Prometheus metrics
+                increment_search_query(site_id)
             except Exception as log_error:
                 # Don't fail the search if logging fails
                 print(f"Failed to log search query: {log_error}")
             
             return SearchResponse(
                 query=q,
-                total_results=len(results),
+                total_results=len(search_results),
                 results=[
                     SearchResult(
                         id=str(r['id']),
@@ -643,15 +657,16 @@ async def search_endpoint(
                         snippet=r['snippet'],
                         rank=r['rank']
                     )
-                    for r in results
+                    for r in search_results
                 ]
             )
-    
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Search failed: {str(e)}"
         )
+
 
 
 @app.get("/api/search/partial", response_class=HTMLResponse)
@@ -684,75 +699,139 @@ async def search_partial_endpoint(
         )
     
     try:
+        search_results = []
+        total_results = 0
+        
         if USE_POSTGRES and USE_MEILISEARCH:
             # Use Meilisearch for search
             meili = MeiliSearchEngine()
             results = await meili.search(q, site_id=site_id, limit=limit, offset=offset)
             
-            # Log the search query for analytics
+            search_results = results['hits']
+            total_results = results['total_hits']
+            
+            # Log the search query for analytics (only if we have a db connection)
             try:
                 response_time_ms = results.get('processing_time_ms', 0)
-                await Analytics.log_search_query(
-                    db=db,
-                    query=q,
-                    results_count=results['total_hits'],
-                    response_time_ms=response_time_ms,
-                    site_id=site_id,
-                    ip_address=None  # Can get from request if needed
-                )
+                # Update Prometheus metrics
+                increment_search_query(site_id)
+                # Log to database for analytics - get db session manually
+                async for db in get_db():
+                    try:
+                        await Analytics.log_search_query(
+                            db=db,
+                            query=q,
+                            results_count=total_results,
+                            response_time_ms=response_time_ms,
+                            site_id=site_id,
+                            ip_address=None
+                        )
+                    finally:
+                        break
             except Exception as log_error:
                 # Don't fail the search if logging fails
                 print(f"Failed to log search query: {log_error}")
-            
-            return SearchResponse(
-                query=results['query'],
-                total_results=results['total_hits'],
-                processing_time_ms=results['processing_time_ms'],
-                results=[
-                    SearchResult(
-                        id=r['id'],
-                        url=r['url'],
-                        title=r['title'],
-                        snippet=r['snippet'],
-                        rank=r['rank']
-                    )
-                    for r in results['hits']
-                ]
-            )
         else:
             # Use SQLite FTS5 fallback
             db_path = settings.database_url.replace("sqlite:///", "")
             search_engine = SQLiteSearchEngine(db_path)
             results = search_engine.search(q, site_id=site_id, limit=limit)
             
-            # Log the search query for analytics
+            search_results = results
+            total_results = len(results)
+            
+            # Log the search query for analytics - skip for SQLite since we don't have async session
             try:
-                await Analytics.log_search_query(
-                    db=db,
-                    query=q,
-                    results_count=len(results),
-                    response_time_ms=None,  # SQLite doesn't track processing time
-                    site_id=site_id,
-                    ip_address=None
-                )
+                # Update Prometheus metrics
+                increment_search_query(site_id)
             except Exception as log_error:
                 # Don't fail the search if logging fails
                 print(f"Failed to log search query: {log_error}")
+        
+        # Return HTML template response
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/search_results.html",
+            context={
+                "query": q,
+                "results": search_results,
+                "total_results": total_results
+            }
+        )
+    
+    except Exception as e:
+        # Return error message as HTML partial
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/search_results.html",
+            context={
+                "query": q,
+                "results": [],
+                "total_results": 0,
+                "error": str(e)
+            }
+        )
+    
+    try:
+        search_results = []
+        total_results = 0
+        
+        if USE_POSTGRES and USE_MEILISEARCH:
+            # Use Meilisearch for search
+            meili = MeiliSearchEngine()
+            results = await meili.search(q, site_id=site_id, limit=limit, offset=offset)
             
-            return SearchResponse(
-                query=q,
-                total_results=len(results),
-                results=[
-                    SearchResult(
-                        id=str(r['id']),
-                        url=r['url'],
-                        title=r['title'],
-                        snippet=r['snippet'],
-                        rank=r['rank']
-                    )
-                    for r in results
-                ]
-            )
+            search_results = results['hits']
+            total_results = results['total_hits']
+            
+            # Log the search query for analytics (only if we have a db connection)
+            try:
+                response_time_ms = results.get('processing_time_ms', 0)
+                # Update Prometheus metrics
+                increment_search_query(site_id)
+                # Log to database for analytics - get db session manually
+                async for db in get_db():
+                    try:
+                        await Analytics.log_search_query(
+                            db=db,
+                            query=q,
+                            results_count=total_results,
+                            response_time_ms=response_time_ms,
+                            site_id=site_id,
+                            ip_address=None
+                        )
+                    finally:
+                        break
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
+        else:
+            # Use SQLite FTS5 fallback
+            db_path = settings.database_url.replace("sqlite:///", "")
+            search_engine = SQLiteSearchEngine(db_path)
+            results = search_engine.search(q, site_id=site_id, limit=limit)
+            
+            search_results = results
+            total_results = len(results)
+            
+            # Log the search query for analytics - skip for SQLite since we don't have async session
+            try:
+                # Update Prometheus metrics
+                increment_search_query(site_id)
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
+        
+        # Return HTML template response
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/search_results.html",
+            context={
+                "query": q,
+                "results": search_results,
+                "total_results": total_results
+            }
+        )
     
     except Exception as e:
         # Return error message as HTML partial

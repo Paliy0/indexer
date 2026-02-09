@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Override app service for development
+  app:
+    environment:
+      DEBUG: "True"
+      LOG_LEVEL: "DEBUG"
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # Debug port for Python debugpy
+    volumes:
+      - ./app:/app/app  # Live code reload
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - ./web-parser:/app/web-parser  # Mount web-parser for development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+
+  # Override worker service for development
+  worker:
+    environment:
+      DEBUG: "True"
+      LOG_LEVEL: "DEBUG"
+    volumes:
+      - ./app:/app/app
+      - ./web-parser:/app/web-parser
+    command: celery -A app.celery_app worker --loglevel=debug --concurrency=2
+
+  # Override beat service for development
+  beat:
+    environment:
+      DEBUG: "True"
+      LOG_LEVEL: "DEBUG"
+    volumes:
+      - ./app:/app/app
+    command: celery -A app.celery_app beat --loglevel=debug
+
+  # Override postgres for development (add admin tools)
+  postgres:
+    ports:
+      - "5432:5432"
+      - "5433:5433"  # Optional: pgAdmin or other admin tool
+
+  # Override redis for development
+  redis:
+    command: redis-server --appendonly yes --loglevel verbose
+
+  # Override meilisearch for development
+  meilisearch:
+    environment:
+      MEILI_ENV: "development"
+      MEILI_LOG_LEVEL: "DEBUG"

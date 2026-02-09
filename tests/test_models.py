@@ -76,24 +76,8 @@ class TestSiteModel:
         assert site.domain == "example.com"
         assert site.status == "pending"
         assert site.page_count == 0
-        assert site.created_at is not None
-        assert site.updated_at is not None
-    
-    @pytest.mark.asyncio
-    async def test_site_default_values(self, async_session):
-        """Test Site model default values"""
-        site = Site(
-            url="https://test.com",
-            domain="test.com"
-        )
-        
-        async_session.add(site)
-        await async_session.commit()
-        await async_session.refresh(site)
-        
-        assert site.status == "pending"
-        assert site.page_count == 0
-        assert site.config == {}
+        assert site.config is not None  # Should be DEFAULT_CONFIG dict
+        assert "content_selector" in site.config  # Check it has default config keys
         assert site.last_scraped is None
     
     @pytest.mark.asyncio

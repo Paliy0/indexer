@@ -10,7 +10,7 @@ This module provides API v1 endpoints mounted at /api/v1 with:
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, UTC, UTC
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Header, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -325,7 +325,7 @@ async def reindex_site(
         "domain": site.domain,
         "status": "scraping",
         "message": "Re-indexing started",
-        "queued_at": datetime.utcnow().isoformat()
+        "queued_at": datetime.now(UTC).isoformat()
     }
 
 
@@ -368,7 +368,7 @@ async def api_search(
         headers = {
             "X-RateLimit-Limit": str(api_key.rate_limit_per_minute),
             "X-RateLimit-Remaining": str(api_key.rate_limit_per_minute - 1),  # Approximation
-            "X-RateLimit-Reset": str(int(datetime.utcnow().timestamp()) + 60)
+            "X-RateLimit-Reset": str(int(datetime.now(UTC).timestamp()) + 60)
         }
         
         return JSONResponse(

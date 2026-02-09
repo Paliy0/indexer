@@ -2,13 +2,13 @@
 # Stage 1: Build web-parser Go binary
 FROM golang:1.22-alpine AS builder
 
-WORKDIR /build
-
 # Copy web-parser source
-COPY web-parser/ ./
+COPY web-parser/ /web-parser/
+
+WORKDIR /web-parser
 
 # Build the web-parser binary (using cmd/web-parser as the main package)
-RUN go build -o web-parser ./cmd/web-parser
+RUN go build -o /web-parser-bin ./cmd/web-parser
 
 # Stage 2: Runtime environment
 FROM python:3.12-slim
@@ -25,7 +25,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy web-parser binary from builder stage
-COPY --from=builder /build/web-parser /app/web-parser/web-parser
+COPY --from=builder /web-parser-bin /app/web-parser/web-parser
 RUN chmod +x /app/web-parser/web-parser
 
 # Copy Python requirements and install dependencies

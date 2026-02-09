@@ -6,7 +6,7 @@ including CSS selectors, crawl depth, filtering rules, and other options.
 """
 
 from typing import List, Dict, Optional, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 import re
 
 
@@ -89,7 +89,7 @@ class SiteConfig(BaseModel):
         description="Custom user agent string (if None, uses web-parser default)"
     )
     
-    @validator("include_patterns", "exclude_patterns")
+    @field_validator("include_patterns", "exclude_patterns")
     def validate_regex_patterns(cls, v):
         """Validate that regex patterns are valid."""
         for pattern in v:
@@ -99,7 +99,7 @@ class SiteConfig(BaseModel):
                 raise ValueError(f"Invalid regex pattern '{pattern}': {e}")
         return v
     
-    @validator("custom_headers")
+    @field_validator("custom_headers")
     def validate_headers(cls, v):
         """Validate custom headers."""
         validated = {}

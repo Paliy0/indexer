@@ -12,7 +12,7 @@ Key format: ss_{token_urlsafe(32)}
 
 import secrets
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC, UTC
 from typing import Optional
 
 from fastapi import HTTPException, Security, Depends
@@ -98,7 +98,7 @@ async def verify_api_key(
         )
     
     # Check expiration
-    if api_key.expires_at and api_key.expires_at < datetime.utcnow():
+    if api_key.expires_at and api_key.expires_at < datetime.now(UTC):
         raise HTTPException(
             status_code=401,
             detail="API key has expired"
@@ -106,7 +106,7 @@ async def verify_api_key(
     
     # Update usage stats
     api_key.requests_count += 1
-    api_key.last_used_at = datetime.utcnow()
+    api_key.last_used_at = datetime.now(UTC)
     
     try:
         await db.commit()
@@ -145,7 +145,7 @@ async def create_api_key(
     # Calculate expiration if specified
     expires_at = None
     if expires_in_days:
-        expires_at = datetime.utcnow() + timedelta(days=expires_in_days)
+        expires_at = datetime.now(UTC) + timedelta(days=expires_in_days)
     
     # Create API key record
     api_key = APIKey(
@@ -226,7 +226,7 @@ async def get_api_key_stats(
     result = await db.execute(
         select(func.count(APIRequest.id)).where(
             APIRequest.api_key_id == api_key_id,
-            APIRequest.timestamp >= datetime.utcnow() - timedelta(days=1)
+            APIRequest.timestamp >= datetime.now(UTC) - timedelta(days=1)
         )
     )
     recent_requests = result.scalar() or 0
@@ -243,8 +243,8 @@ async def get_api_key_stats(
         "expires_at": api_key.expires_at,
         "is_active": api_key.is_active,
         "days_until_expiry": (
-            (api_key.expires_at - datetime.utcnow()).days
-            if api_key.expires_at and api_key.expires_at > datetime.utcnow()
+            (api_key.expires_at - datetime.now(UTC)).days
+            if api_key.expires_at and api_key.expires_at > datetime.now(UTC)
             else None
         )
     }

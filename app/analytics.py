@@ -13,7 +13,7 @@ Supports:
 """
 
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC, UTC
 from sqlalchemy import func, desc, select, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -92,7 +92,7 @@ class Analytics:
             - avg_response_time_ms: Average response time
             - searches_by_day: Daily search counts
         """
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
         
         # Base query for filtering by site and time
         base_conditions = [
@@ -160,7 +160,7 @@ class Analytics:
             success_rate = round((total_searches - failed_searches) / total_searches * 100, 1)
         
         # 9. Recent queries (last 24 hours)
-        recent_24h = datetime.utcnow() - timedelta(hours=24)
+        recent_24h = datetime.now(UTC) - timedelta(hours=24)
         recent_query = select(func.count(SearchQuery.id)).where(
             *base_conditions,
             SearchQuery.timestamp >= recent_24h
@@ -255,7 +255,7 @@ class Analytics:
         Returns:
             List of site comparison data
         """
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
         
         # Subquery for site search stats
         result = await db.execute(
@@ -313,7 +313,7 @@ class Analytics:
         Returns:
             List of daily trend data for the query
         """
-        since = datetime.utcnow() - timedelta(days=days)
+        since = datetime.now(UTC) - timedelta(days=days)
         
         try:
             # PostgreSQL-style date truncation
@@ -368,7 +368,7 @@ class Analytics:
         Returns:
             Number of queries deleted
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+        cutoff_date = datetime.now(UTC) - timedelta(days=days_to_keep)
         
         # Count before deletion for logging
         count_query = select(func.count(SearchQuery.id)).where(
