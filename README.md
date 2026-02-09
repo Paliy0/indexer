@@ -2,9 +2,29 @@
 
 A hosted service that creates searchable indexes of any website. Built with modern web technologies including FastAPI, PostgreSQL, Meilisearch, and web-parser.
 
-## Built with web-parser
+## 🚀 Built with web-parser
 
-This project uses [web-parser](https://github.com/Paliy0/web-parser), an open-source Go library for web scraping. The indexer project serves as a real-world showcase of how to integrate web-parser into a production application for creating searchable website indexes.
+This project uses [web-parser](https://github.com/Paliy0/web-parser), an open-source Go library for web scraping. The indexer project serves as a real-world showcase of how to integrate web-parser into a production application.
+
+### How web-parser fits into the architecture
+
+web-parser is the **core scraping engine** that powers the entire indexing process:
+
+1. **Binary Integration**: The Go binary (`web-parser/web-parser`) is called via subprocess from Python
+2. **JSON Output**: web-parser outputs structured JSON with page URLs, titles, and content
+3. **Configuration Support**: Supports CSS selectors, URL patterns, and custom headers per site
+4. **Crawling**: Follows links with configurable depth limits and respect for robots.txt
+
+### Integration Features
+
+- **Async Processing**: Python's `asyncio` manages the subprocess with streaming output
+- **Error Handling**: Graceful handling of timeouts, network errors, and malformed responses
+- **Progress Tracking**: Real-time updates during scraping via Server-Sent Events
+- **Configuration**: Per-site scraping rules passed to web-parser as command-line arguments
+
+### Architecture Role
+
+In the architecture diagram below, web-parser sits at the bottom layer, responsible for fetching and parsing web content which then flows upward through the system for storage, indexing, and search.
 
 ## ✨ Features
 
