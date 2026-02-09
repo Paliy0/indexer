@@ -62,3 +62,7 @@ vine==5.1.0
 watchfiles==1.1.1
 wcwidth==0.5.3
 websockets==16.0
+beautifulsoup4==4.14.3
+beautifulsoup4==4.14.3
+psycopg2-binary==2.9.11
+psycopg2-binary==2.9.11

@@ -226,3 +226,88 @@ async def _scrape_site_async(task, site_id: int) -> Dict[str, Any]:
                 raise MaxRetriesExceededError(
                     f"Failed to scrape site {site_id} after {retry_count} retries: {str(exc)}"
                 )
+
+
+@celery_app.task
+def check_auto_reindex():
+    """
+    Check for sites due for re-indexing and queue them.
+    
+    Runs every hour via Celery Beat.
+    """
+    asyncio.run(_check_auto_reindex_async())
+
+
+async def _check_auto_reindex_async():
+    """
+    Async implementation of auto-reindex check.
+    
+    Queries sites with auto_reindex=True and last_scraped older than
+    reindex_interval_days, then queues scrape_site_task.delay(site_id) for each.
+    """
+    import logging
+    from datetime import datetime, timedelta
+    from sqlalchemy import select, and_
+    
+    logger = logging.getLogger(__name__)
+    
+    async with AsyncSessionLocal() as db:
+        try:
+            # Find sites with auto_reindex enabled and status completed
+            # We use JSON/JSONB path operators to check config.auto_reindex
+            result = await db.execute(
+                select(Site).where(
+                    and_(
+                        Site.config["auto_reindex"].as_boolean() == True,
+                        Site.status == "completed"
+                    )
+                )
+            )
+            
+            sites = result.scalars().all()
+            
+            if not sites:
+                logger.info("No sites found with auto_reindex enabled")
+                return
+            
+            logger.info(f"Found {len(sites)} sites with auto_reindex enabled")
+            
+            # Process each site to check if re-index is due
+            sites_to_reindex = []
+            utc_now = datetime.utcnow()
+            
+            for site in sites:
+                try:
+                    # Get reindex interval from config (default to 7 days if not specified)
+                    config = site.config or {}
+                    interval_days = config.get("reindex_interval_days", 7)
+                    
+                    # Skip if site was never scraped (shouldn't happen with status='completed')
+                    if not site.last_scraped:
+                        logger.warning(f"Site {site.domain} has status='completed' but no last_scraped timestamp")
+                        continue
+                    
+                    # Calculate due date
+                    due_date = site.last_scraped + timedelta(days=interval_days)
+                    
+                    # Check if re-index is due (now >= due_date)
+                    if utc_now >= due_date:
+                        sites_to_reindex.append(site)
+                        logger.info(f"Site {site.domain} is due for re-index (last scraped: {site.last_scraped}, interval: {interval_days} days)")
+                except Exception as e:
+                    logger.error(f"Error checking re-index for site {site.id}: {str(e)}")
+            
+            # Queue re-index tasks
+            for site in sites_to_reindex:
+                try:
+                    # Queue the scrape task
+                    scrape_site_task.delay(site.id)
+                    logger.info(f"Queued auto re-index for site {site.domain} (ID: {site.id})")
+                except Exception as e:
+                    logger.error(f"Failed to queue re-index task for site {site.id}: {str(e)}")
+            
+            logger.info(f"Queued re-index for {len(sites_to_reindex)} out of {len(sites)} sites")
+            
+        except Exception as e:
+            logger.error(f"Error in check_auto_reindex: {str(e)}")
+            raise

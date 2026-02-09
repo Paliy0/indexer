@@ -1,0 +1,446 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="config-container">
+    <h1>Configure {{ site.domain }}</h1>
+    <p class="form-helper">
+        Customize how this site is scraped and indexed. Changes will apply to future scrapes.
+    </p>
+    
+    {% if message %}
+    <div class="alert alert-{{ message_type }}">{{ message }}</div>
+    {% endif %}
+    
+    <form id="config-form" 
+          hx-put="/api/sites/{{ site.id }}/config" 
+          hx-target="#form-response"
+          hx-swap="innerHTML">
+        <div class="section">
+            <h3>Content Selection</h3>
+            
+            <div class="form-group">
+                <label for="content_selector">Content CSS Selector</label>
+                <input type="text" 
+                       id="content_selector" 
+                       name="content_selector" 
+                       value="{{ config.content_selector }}" 
+                       placeholder="e.g., article, .content, #main, body">
+                <span class="form-helper">
+                    CSS selector for the main content area. Default is "body".
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="title_selector">Title CSS Selector</label>
+                <input type="text" 
+                       id="title_selector" 
+                       name="title_selector" 
+                       value="{{ config.title_selector }}" 
+                       placeholder="e.g., title, h1, .post-title">
+                <span class="form-helper">
+                    CSS selector for page title. Default is "title".
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="exclude_selectors">Exclude Selectors (one per line)</label>
+                <textarea id="exclude_selectors" 
+                          name="exclude_selectors" 
+                          rows="3"
+                          placeholder="e.g., nav, .ads, #sidebar, footer">{{ config.exclude_selectors | join('\n') }}</textarea>
+                <span class="form-helper">
+                    CSS selectors to exclude from content (ads, navigation, comments, etc.)
+                </span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Crawling Options</h3>
+            
+            <div class="form-group">
+                <label for="max_depth">Max Crawl Depth</label>
+                <input type="number" 
+                       id="max_depth" 
+                       name="max_depth" 
+                       value="{{ config.max_depth }}" 
+                       min="1" 
+                       max="5">
+                <span class="form-helper">
+                    How many levels deep to crawl from the homepage (1-5).
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="delay_ms">Request Delay (milliseconds)</label>
+                <input type="number" 
+                       id="delay_ms" 
+                       name="delay_ms" 
+                       value="{{ config.delay_ms }}" 
+                       min="50" 
+                       max="5000">
+                <span class="form-helper">
+                    Delay between requests to avoid overwhelming the server (50-5000ms).
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" 
+                           id="respect_robots_txt" 
+                           name="respect_robots_txt" 
+                           value="true"
+                           {% if config.respect_robots_txt %}checked{% endif %}>
+                    <label for="respect_robots_txt">Respect robots.txt</label>
+                </div>
+                <span class="form-helper">
+                    Follow robots.txt rules when crawling.
+                </span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>URL Filtering</h3>
+            
+            <div class="form-group">
+                <label for="include_patterns">Include Patterns (regex, one per line)</label>
+                <textarea id="include_patterns" 
+                          name="include_patterns" 
+                          rows="3"
+                          placeholder="e.g., ^https://example\.com/blog/.*$, ^.*\.html$">{{ config.include_patterns | join('\n') }}</textarea>
+                <span class="form-helper">
+                    Regex patterns to include URLs. Default is ".*" (all URLs).
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="exclude_patterns">Exclude Patterns (regex, one per line)</label>
+                <textarea id="exclude_patterns" 
+                          name="exclude_patterns" 
+                          rows="3"
+                          placeholder="e.g., ^.*\.pdf$, ^.*\.jpg$, ^.*/admin/.*$">{{ config.exclude_patterns | join('\n') }}</textarea>
+                <span class="form-helper">
+                    Regex patterns to exclude URLs (PDFs, images, admin pages, etc.)
+                </span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Auto-Refresh</h3>
+            
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" 
+                           id="auto_reindex" 
+                           name="auto_reindex" 
+                           value="true"
+                           {% if config.auto_reindex %}checked{% endif %}>
+                    <label for="auto_reindex">Enable automatic re-indexing</label>
+                </div>
+                <span class="form-helper">
+                    Automatically re-index this site on a schedule.
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="reindex_interval_days">Re-index Interval (days)</label>
+                <input type="number" 
+                       id="reindex_interval_days" 
+                       name="reindex_interval_days" 
+                       value="{{ config.reindex_interval_days }}" 
+                       min="1" 
+                       max="30">
+                <span class="form-helper">
+                    Days between automatic re-indexes when auto-reindex is enabled (1-30).
+                </span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>Advanced Options</h3>
+            
+            <div class="form-group">
+                <label for="custom_headers">Custom Headers (JSON format)</label>
+                <textarea id="custom_headers" 
+                          name="custom_headers" 
+                          rows="3"
+                          placeholder='{ "Accept-Language": "en-US", "X-Custom-Header": "value" }'>{{ config.custom_headers | tojson(indent=2) }}</textarea>
+                <span class="form-helper">
+                    Custom HTTP headers to send with requests (JSON dictionary).
+                </span>
+            </div>
+            
+            <div class="form-group">
+                <label for="user_agent">Custom User Agent</label>
+                <input type="text" 
+                       id="user_agent" 
+                       name="user_agent" 
+                       value="{{ config.user_agent or '' }}" 
+                       placeholder="e.g., Mozilla/5.0 (compatible; MyBot/1.0)">
+                <span class="form-helper">
+                    Custom user agent string. Leave empty to use default.
+                </span>
+            </div>
+        </div>
+        
+        <div id="form-response"></div>
+        
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Save Configuration</button>
+            <button type="button" 
+                    class="btn btn-outline"
+                    hx-post="/api/sites/{{ site.id }}/preview"
+                    hx-include="#config-form"
+                    hx-target="#preview-container"
+                    hx-swap="innerHTML">
+                Preview Content Selector
+            </button>
+            <a href="/site/{{ site.domain }}/search" class="btn btn-secondary">Back to Search</a>
+        </div>
+    </form>
+    
+    <div id="preview-container">
+        <!-- Preview content will be loaded here -->
+    </div>
+</div>
+
+<style>
+    .config-container { 
+        max-width: 800px; 
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .section {
+        margin: 30px 0;
+        padding: 25px;
+        background: #f9fafb;
+        border-radius: 10px;
+        border-left: 4px solid #3b82f6;
+    }
+    
+    .section h3 {
+        margin-top: 0;
+        color: #1f2937;
+        font-size: 1.25rem;
+        margin-bottom: 20px;
+    }
+    
+    .form-group {
+        margin: 20px 0;
+    }
+    
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 600;
+        color: #374151;
+    }
+    
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group textarea {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        font-size: 14px;
+        transition: border-color 0.2s;
+    }
+    
+    .form-group input:focus,
+    .form-group textarea:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    .form-group textarea {
+        min-height: 80px;
+        resize: vertical;
+        font-family: monospace;
+        font-size: 13px;
+    }
+    
+    .form-helper {
+        display: block;
+        margin-top: 5px;
+        font-size: 12px;
+        color: #6b7280;
+    }
+    
+    .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .checkbox-group input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+    }
+    
+    .button-group {
+        display: flex;
+        gap: 12px;
+        margin-top: 30px;
+        flex-wrap: wrap;
+    }
+    
+    .btn {
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        border: none;
+    }
+    
+    .btn-primary {
+        background-color: #3b82f6;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background-color: #2563eb;
+    }
+    
+    .btn-secondary {
+        background-color: #6b7280;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background-color: #4b5563;
+    }
+    
+    .btn-outline {
+        background-color: transparent;
+        color: #3b82f6;
+        border: 1px solid #3b82f6;
+    }
+    
+    .btn-outline:hover {
+        background-color: #eff6ff;
+    }
+    
+    .preview-container {
+        margin-top: 30px;
+        border: 2px solid #3b82f6;
+        border-radius: 8px;
+        padding: 20px;
+        background-color: #f8fafc;
+    }
+    
+    .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+    
+    .preview-content {
+        max-height: 400px;
+        overflow: auto;
+        background: white;
+        padding: 15px;
+        border-radius: 4px;
+        border: 1px solid #e5e7eb;
+    }
+    
+    .preview-content code {
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    
+    .alert {
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin: 15px 0;
+    }
+    
+    .alert-success {
+        background-color: #d1fae5;
+        color: #065f46;
+        border: 1px solid #a7f3d0;
+    }
+    
+    .alert-error {
+        background-color: #fee2e2;
+        color: #991b1b;
+        border: 1px solid #fecaca;
+    }
+    
+    .alert-info {
+        background-color: #dbeafe;
+        color: #1e40af;
+        border: 1px solid #bfdbfe;
+    }
+    
+    @media (max-width: 768px) {
+        .config-container {
+            padding: 15px;
+        }
+        
+        .section {
+            padding: 20px;
+        }
+        
+        .button-group {
+            flex-direction: column;
+        }
+        
+        .btn {
+            width: 100%;
+        }
+    }
+</style>
+
+<script>
+    // Add CSRF token to HTMX requests
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+        evt.detail.headers['X-CSRF-Token'] = '{{ csrf_token }}';
+    });
+    
+    // Show success/error messages
+    htmx.on('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'form-response') {
+            const response = evt.detail.target;
+            if (response.innerHTML.includes('success')) {
+                // Show success message briefly
+                setTimeout(() => {
+                    response.innerHTML = '';
+                }, 3000);
+            }
+        }
+    });
+    
+    // Handle form validation
+    document.getElementById('config-form').addEventListener('submit', function(e) {
+        const maxDepth = parseInt(document.getElementById('max_depth').value);
+        const delayMs = parseInt(document.getElementById('delay_ms').value);
+        const intervalDays = parseInt(document.getElementById('reindex_interval_days').value);
+        
+        if (maxDepth < 1 || maxDepth > 5) {
+            alert('Max crawl depth must be between 1 and 5');
+            e.preventDefault();
+            return false;
+        }
+        
+        if (delayMs < 50 || delayMs > 5000) {
+            alert('Request delay must be between 50 and 5000 milliseconds');
+            e.preventDefault();
+            return false;
+        }
+        
+        if (intervalDays < 1 || intervalDays > 30) {
+            alert('Re-index interval must be between 1 and 30 days');
+            e.preventDefault();
+            return false;
+        }
+        
+        return true;
+    });
+</script>
+{% endblock %}

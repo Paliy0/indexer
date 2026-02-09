@@ -54,6 +54,14 @@ celery_app.conf.update(
         Queue("scraping", routing_key="scraping"),
     ),
     
+    # Celery Beat schedule for periodic tasks
+    beat_schedule={
+        "check-auto-reindex": {
+            "task": "app.tasks.check_auto_reindex",
+            "schedule": 3600.0,  # Run every hour
+        },
+    },
+    
     # Autodiscovery
     imports=("app.tasks",),
 )

@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Search Analytics Dashboard{% endblock %}
+
+{% block content %}
+<h1>Search Analytics Dashboard</h1>
+
+<div class="info">
+    <p>Track search performance, user queries, and system metrics across all indexed sites.</p>
+</div>
+
+<!-- Time period selector -->
+<div style="margin-bottom: 2rem;">
+    <form method="get" class="inline-form">
+        <label for="days">Time Period:</label>
+        <select name="days" id="days" onchange="this.form.submit()">
+            <option value="7" {% if period_days == 7 %}selected{% endif %}>Last 7 days</option>
+            <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
+            <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
+            <option value="365" {% if period_days == 365 %}selected{% endif %}>Last year</option>
+        </select>
+        
+        {% if current_site %}
+            <input type="hidden" name="site_id" value="{{ current_site.id }}">
+        {% endif %}
+    </form>
+</div>
+
+<!-- Site filter -->
+{% if sites %}
+<div style="margin-bottom: 2rem;">
+    <form method="get" class="inline-form">
+        <label for="site_id">Filter by Site:</label>
+        <select name="site_id" id="site_id" onchange="this.form.submit()">
+            <option value="">All Sites</option>
+            {% for site in sites %}
+                <option value="{{ site.id }}" 
+                        {% if current_site and current_site.id == site.id %}selected{% endif %}>
+                    {{ site.domain }}
+                </option>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="days" value="{{ period_days }}">
+    </form>
+</div>
+{% endif %}
+
+<!-- Main stats grid -->
+<div class="stats">
+    <div class="stat-box">
+        <div class="number">{{ total_searches|default(0) }}</div>
+        <div class="label">Total Searches</div>
+    </div>
+    
+    <div class="stat-box">
+        <div class="number">{{ unique_queries|default(0) }}</div>
+        <div class="label">Unique Queries</div>
+    </div>
+    
+    <div class="stat-box">
+        <div class="number">{{ avg_results_per_query|default(0) }}</div>
+        <div class="label">Avg Results/Query</div>
+    </div>
+    
+    <div class="stat-box">
+        <div class="number">{{ success_rate_percent|default(0) }}%</div>
+        <div class="label">Success Rate</div>
+    </div>
+    
+    <div class="stat-box">
+        <div class="number">{{ avg_response_time_ms|default(0) }}ms</div>
+        <div class="label">Avg Response Time</div>
+    </div>
+    
+    <div class="stat-box">
+        <div class="number">{{ recent_searches_24h|default(0) }}</div>
+        <div class="label">Searches (24h)</div>
+    </div>
+</div>
+
+<!-- Failed searches warning -->
+{% if failed_searches > 0 %}
+<div class="warning" style="margin-top: 2rem;">
+    <h3 style="margin-top: 0;">⚠ Failed Searches: {{ failed_searches }}</h3>
+    <p>{{ failed_searches }} search queries returned 0 results in the last {{ period_days }} days. 
+       Consider reviewing your content or adjusting search settings.</p>
+</div>
+{% endif %}
+
+<!-- Top Queries -->
+<div style="margin-top: 3rem;">
+    <h2>Top Queries (Last {{ period_days }} days)</h2>
+    
+    {% if top_queries %}
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Query</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Count</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Avg Results</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Avg Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for query in top_queries %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 0.75rem; vertical-align: top;">
+                        <strong>{{ query.query }}</strong>
+                        {% if query.avg_time_ms > 1000 %}
+                            <span style="color: var(--warning); font-size: 0.85rem;">
+                                ⚠ Slow
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ query.count }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ query.avg_results }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ query.avg_time_ms }}ms
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="info" style="margin-top: 1rem;">
+        <p>No search queries recorded in the last {{ period_days }} days.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Site Comparison -->
+{% if not current_site %}
+<div style="margin-top: 3rem;">
+    <h2>Site Comparison</h2>
+    
+    {% if sites_comparison %}
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Site</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Total Searches</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Unique Queries</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Avg Results</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Success Rate</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for site in sites_comparison %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 0.75rem; vertical-align: top;">
+                        <a href="/analytics?site_id={{ site.site_id }}&days={{ period_days }}">
+                            {{ site.domain }}
+                        </a>
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ site.total_searches }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ site.unique_queries }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ site.avg_results }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ site.success_rate_percent }}%
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="info" style="margin-top: 1rem;">
+        <p>No site comparison data available.</p>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Searches by Day -->
+{% if searches_by_day %}
+<div style="margin-top: 3rem;">
+    <h2>Searches by Day</h2>
+    
+    <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Date</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Searches</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Avg Results</th>
+                    <th style="text-align: right; padding: 0.75rem; background-color: var(--bg-tertiary); border-bottom: 2px solid var(--border-color);">Avg Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for day in searches_by_day %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 0.75rem; vertical-align: top;">
+                        {{ day.date|default("Unknown")|replace("T00:00:00", "") }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ day.count }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ day.avg_results }}
+                    </td>
+                    <td style="text-align: right; padding: 0.75rem; vertical-align: top;">
+                        {{ day.avg_time_ms }}ms
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Actions -->
+<div style="margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color);">
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <a href="/" class="button">← Back to Home</a>
+        
+        {% if current_site %}
+            <a href="/site/{{ current_site.domain }}/search" class="button">Search this Site</a>
+            <a href="/analytics" class="button">View All Sites</a>
+        {% endif %}
+        
+        <form method="post" action="/api/analytics/cleanup" style="display: inline;">
+            <button type="submit" onclick="return confirm('Delete old search queries? Queries older than 90 days will be removed.')" 
+                    class="button" style="background-color: var(--danger);">
+                Cleanup Old Data
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Chart placeholder (could be enhanced with Chart.js) -->
+<div style="margin-top: 3rem; padding: 2rem; background-color: var(--bg-tertiary); border-radius: var(--radius-md); text-align: center;">
+    <h3>Search Trends Visualization</h3>
+    <p style="color: var(--text-secondary);">
+        <em>Search volume visualization would appear here with Chart.js integration.</em>
+    </p>
+    <p style="margin-top: 1rem; font-size: 0.9rem;">
+        To enable charts: Add Chart.js CDN and implement JavaScript data visualization.
+    </p>
+</div>
+
+<style>
+.inline-form {
+    display: inline-block;
+    margin-left: 1rem;
+}
+
+select {
+    padding: 0.5rem 1rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 1rem;
+    margin-left: 0.5rem;
+}
+
+select:focus {
+    outline: none;
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+</style>
+{% endblock %}

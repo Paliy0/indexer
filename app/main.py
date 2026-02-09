@@ -15,6 +15,8 @@ from datetime import datetime
 import asyncio
 import json
 import redis.asyncio as aioredis
+from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup
 
 from app.config import get_settings
 from app.db import get_db, init_db as async_init_db
@@ -22,6 +24,9 @@ from app.models import Site, Page
 from app.scraper import WebParser, ScrapingError
 from app.meilisearch_engine import MeiliSearchEngine
 from app.middleware import SubdomainMiddleware
+from app.site_config import SiteConfig, DEFAULT_CONFIG
+from app.api_v1 import router as api_v1_router
+from app.analytics import Analytics
 
 # Legacy imports for SQLite fallback
 from app.database import (
@@ -83,8 +88,50 @@ async def lifespan(app: FastAPI):
 # Initialize FastAPI app
 app = FastAPI(
     title="Site Search Platform",
-    description="A hosted service that creates searchable indexes of any website",
-    version="0.2.0",
+    description="A hosted service that creates searchable indexes of any website.",
+    version="1.0.0",
+    contact={
+        "name": "Site Search Platform",
+        "url": "https://github.com/yourusername/site-search-platform"
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT"
+    },
+    openapi_tags=[
+        {
+            "name": "Scraping",
+            "description": "Website scraping and indexing endpoints"
+        },
+        {
+            "name": "Search",
+            "description": "Search endpoints for querying indexed content"
+        },
+        {
+            "name": "Sites",
+            "description": "Site management and status endpoints"
+        },
+        {
+            "name": "Templates",
+            "description": "Web interface template routes"
+        },
+        {
+            "name": "Status",
+            "description": "System status and monitoring endpoints"
+        },
+        {
+            "name": "Export",
+            "description": "Data export endpoints for JSON, CSV, and Markdown formats"
+        },
+        {
+            "name": "Analytics",
+            "description": "Search analytics and query statistics endpoints"
+        },
+        {
+            "name": "Auth",
+            "description": "API key authentication and authorization endpoints"
+        }
+    ],
     lifespan=lifespan
 )
 
@@ -97,6 +144,9 @@ if settings.base_domain:
 
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
+
+# Mount API v1 router
+app.include_router(api_v1_router)
 
 
 # Pydantic models for API
@@ -115,6 +165,24 @@ class ScrapeRequest(BaseModel):
         if not parsed.scheme or not parsed.netloc:
             raise ValueError("Invalid URL: must include scheme and domain")
         return v
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://example.com",
+                "crawl": True,
+                "max_depth": 2
+            }
+        }
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "url": "https://example.com",
+                "crawl": True,
+                "max_depth": 2
+            }
+        }
 
 
 class SiteResponse(BaseModel):
@@ -126,6 +194,19 @@ class SiteResponse(BaseModel):
     page_count: int
     last_scraped: Optional[str]
     created_at: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "url": "https://example.com",
+                "domain": "example.com",
+                "status": "completed",
+                "page_count": 42,
+                "last_scraped": "2024-01-15T10:30:00Z",
+                "created_at": "2024-01-10T14:20:00Z"
+            }
+        }
 
 
 class SearchResult(BaseModel):
@@ -135,6 +216,17 @@ class SearchResult(BaseModel):
     title: str
     snippet: str
     rank: float
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "123",
+                "url": "https://example.com/page",
+                "title": "Example Page Title",
+                "snippet": "This is an example page with <mark>search</mark> terms highlighted.",
+                "rank": 0.95
+            }
+        }
 
 
 class SearchResponse(BaseModel):
@@ -143,6 +235,56 @@ class SearchResponse(BaseModel):
     total_results: int
     results: List[SearchResult]
     processing_time_ms: int = 0
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "search example",
+                "total_results": 10,
+                "processing_time_ms": 42,
+                "results": [
+                    {
+                        "id": "123",
+                        "url": "https://example.com/page",
+                        "title": "Example Page Title",
+                        "snippet": "This is an example page with <mark>search</mark> terms highlighted.",
+                        "rank": 0.95
+                    },
+                    {
+                        "id": "124",
+                        "url": "https://example.com/another",
+                        "title": "Another Example",
+                        "snippet": "Another page with <mark>example</mark> content.",
+                        "rank": 0.85
+                    }
+                ]
+            }
+        }
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "search example",
+                "total_results": 10,
+                "processing_time_ms": 42,
+                "results": [
+                    {
+                        "id": "123",
+                        "url": "https://example.com/page",
+                        "title": "Example Page Title",
+                        "snippet": "This is an example page with <mark>search</mark> terms highlighted.",
+                        "rank": 0.95
+                    },
+                    {
+                        "id": "124",
+                        "url": "https://example.com/another",
+                        "title": "Another Example",
+                        "snippet": "Another page with <mark>example</mark> content.",
+                        "rank": 0.85
+                    }
+                ]
+            }
+        }
 
 
 class SystemStatus(BaseModel):
@@ -153,6 +295,18 @@ class SystemStatus(BaseModel):
     web_parser: str
     total_sites: int
     total_pages: int
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "ok",
+                "database": "postgresql",
+                "search_engine": "meilisearch",
+                "web_parser": "ok",
+                "total_sites": 5,
+                "total_pages": 1234
+            }
+        }
 
 
 # Helper functions for async database operations
@@ -229,12 +383,31 @@ async def create_page_async(
 
 # API Endpoints
 
-@app.post("/api/scrape", status_code=status.HTTP_202_ACCEPTED)
+@app.post("/api/scrape", status_code=status.HTTP_202_ACCEPTED, tags=["Scraping"])
 async def scrape_endpoint(scrape_req: ScrapeRequest):
     """
     Trigger a scrape job for a website
     
     Returns 202 Accepted with site details
+    
+    **Example Request:**
+    ```json
+    {
+        "url": "https://example.com",
+        "crawl": true,
+        "max_depth": 2
+    }
+    ```
+    
+    **Example Response (202 Accepted):**
+    ```json
+    {
+        "site_id": 1,
+        "url": "https://example.com",
+        "status": "completed",
+        "message": "Successfully scraped 42 pages"
+    }
+    ```
     """
     url_str = str(scrape_req.url)
     parsed = urlparse(url_str)
@@ -357,12 +530,13 @@ async def scrape_endpoint(scrape_req: ScrapeRequest):
         )
 
 
-@app.get("/api/search")
+@app.get("/api/search", tags=["Search"])
 async def search_endpoint(
     q: str = Query(..., min_length=1, description="Search query"),
     site_id: Optional[int] = Query(None, description="Filter by site ID"),
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Search indexed pages
@@ -372,6 +546,29 @@ async def search_endpoint(
     - site_id: Filter by site ID (optional)
     - limit: Max results (default: 20, max: 100)
     - offset: Pagination offset (default: 0)
+    
+    **Example Request:**
+    ```http
+    GET /api/search?q=search+example&site_id=1&limit=10&offset=0
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+        "query": "search example",
+        "total_results": 10,
+        "processing_time_ms": 42,
+        "results": [
+            {
+                "id": "123",
+                "url": "https://example.com/page",
+                "title": "Example Page Title",
+                "snippet": "This is an example page with <mark>search</mark> terms highlighted.",
+                "rank": 0.95
+            }
+        ]
+    }
+    ```
     """
     if not q or not q.strip():
         raise HTTPException(
@@ -384,6 +581,21 @@ async def search_endpoint(
             # Use Meilisearch for search
             meili = MeiliSearchEngine()
             results = await meili.search(q, site_id=site_id, limit=limit, offset=offset)
+            
+            # Log the search query for analytics
+            try:
+                response_time_ms = results.get('processing_time_ms', 0)
+                await Analytics.log_search_query(
+                    db=db,
+                    query=q,
+                    results_count=results['total_hits'],
+                    response_time_ms=response_time_ms,
+                    site_id=site_id,
+                    ip_address=None  # Can get from request if needed
+                )
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
             
             return SearchResponse(
                 query=results['query'],
@@ -405,6 +617,20 @@ async def search_endpoint(
             db_path = settings.database_url.replace("sqlite:///", "")
             search_engine = SQLiteSearchEngine(db_path)
             results = search_engine.search(q, site_id=site_id, limit=limit)
+            
+            # Log the search query for analytics
+            try:
+                await Analytics.log_search_query(
+                    db=db,
+                    query=q,
+                    results_count=len(results),
+                    response_time_ms=None,  # SQLite doesn't track processing time
+                    site_id=site_id,
+                    ip_address=None
+                )
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
             
             return SearchResponse(
                 query=q,
@@ -463,15 +689,35 @@ async def search_partial_endpoint(
             meili = MeiliSearchEngine()
             results = await meili.search(q, site_id=site_id, limit=limit, offset=offset)
             
-            return templates.TemplateResponse(
-                request=request,
-                name="partials/search_results.html",
-                context={
-                    "query": q,
-                    "results": results['hits'],
-                    "total_results": results['total_hits'],
-                    "processing_time_ms": results['processing_time_ms']
-                }
+            # Log the search query for analytics
+            try:
+                response_time_ms = results.get('processing_time_ms', 0)
+                await Analytics.log_search_query(
+                    db=db,
+                    query=q,
+                    results_count=results['total_hits'],
+                    response_time_ms=response_time_ms,
+                    site_id=site_id,
+                    ip_address=None  # Can get from request if needed
+                )
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
+            
+            return SearchResponse(
+                query=results['query'],
+                total_results=results['total_hits'],
+                processing_time_ms=results['processing_time_ms'],
+                results=[
+                    SearchResult(
+                        id=r['id'],
+                        url=r['url'],
+                        title=r['title'],
+                        snippet=r['snippet'],
+                        rank=r['rank']
+                    )
+                    for r in results['hits']
+                ]
             )
         else:
             # Use SQLite FTS5 fallback
@@ -479,14 +725,33 @@ async def search_partial_endpoint(
             search_engine = SQLiteSearchEngine(db_path)
             results = search_engine.search(q, site_id=site_id, limit=limit)
             
-            return templates.TemplateResponse(
-                request=request,
-                name="partials/search_results.html",
-                context={
-                    "query": q,
-                    "results": results,
-                    "total_results": len(results)
-                }
+            # Log the search query for analytics
+            try:
+                await Analytics.log_search_query(
+                    db=db,
+                    query=q,
+                    results_count=len(results),
+                    response_time_ms=None,  # SQLite doesn't track processing time
+                    site_id=site_id,
+                    ip_address=None
+                )
+            except Exception as log_error:
+                # Don't fail the search if logging fails
+                print(f"Failed to log search query: {log_error}")
+            
+            return SearchResponse(
+                query=q,
+                total_results=len(results),
+                results=[
+                    SearchResult(
+                        id=str(r['id']),
+                        url=r['url'],
+                        title=r['title'],
+                        snippet=r['snippet'],
+                        rank=r['rank']
+                    )
+                    for r in results
+                ]
             )
     
     except Exception as e:
@@ -1173,3 +1438,503 @@ async def trigger_site_scrape(domain: str, url: str = Form(...)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Scraping failed: {str(e)}"
         )
+
+@app.get("/site/{domain}/config", response_class=HTMLResponse)
+async def site_config_page(
+    request: Request,
+    domain: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Site configuration page.
+    """
+    # Get the site
+    result = await db.execute(select(Site).where(Site.domain == domain))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Parse config from JSON
+    config_data = site.config if site.config else DEFAULT_CONFIG.dict()
+    config = SiteConfig(**config_data)
+    
+    return templates.TemplateResponse(
+        "config.html",
+        {
+            "request": request,
+            "site": site,
+            "config": config,
+            "message": request.query_params.get("message", ""),
+            "message_type": request.query_params.get("message_type", "info")
+        }
+    )
+
+
+@app.get("/api/sites/{site_id}/config")
+async def get_site_config(
+    site_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get site configuration.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Parse config from JSON
+    config_data = site.config if site.config else DEFAULT_CONFIG.dict()
+    config = SiteConfig(**config_data)
+    
+    return config.dict()
+
+
+@app.put("/api/sites/{site_id}/config")
+async def update_site_config(
+    site_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update site configuration.
+    
+    Accepts form data with configuration fields.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Get form data
+    form_data = await request.form()
+    form_dict = dict(form_data)
+    
+    # Handle checkboxes
+    form_dict["respect_robots_txt"] = form_dict.get("respect_robots_txt") == "true"
+    form_dict["auto_reindex"] = form_dict.get("auto_reindex") == "true"
+    
+    # Handle lists (split by newlines)
+    list_fields = ["exclude_selectors", "include_patterns", "exclude_patterns"]
+    for field in list_fields:
+        if field in form_dict and form_dict[field]:
+            # Split by newlines, strip whitespace, filter empty strings
+            items = [item.strip() for item in form_dict[field].split("\n") if item.strip()]
+            form_dict[field] = items
+        elif field not in form_dict:
+            form_dict[field] = []
+    
+    # Handle JSON fields
+    if "custom_headers" in form_dict and form_dict["custom_headers"]:
+        try:
+            form_dict["custom_headers"] = json.loads(form_dict["custom_headers"])
+        except json.JSONDecodeError:
+            # If not valid JSON, try to parse as key:value pairs
+            headers = {}
+            for line in form_dict["custom_headers"].split("\n"):
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    headers[key.strip()] = value.strip()
+            form_dict["custom_headers"] = headers
+    
+    # Get existing config as base
+    existing_config = site.config if site.config else DEFAULT_CONFIG.dict()
+    existing_config.update(form_dict)
+    
+    # Validate the configuration
+    try:
+        config = SiteConfig(**existing_config)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid configuration: {str(e)}")
+    
+    # Update site config
+    site.config = config.dict()
+    await db.commit()
+    
+    # Return success response
+    return {"status": "success", "message": "Configuration updated successfully"}
+
+
+@app.post("/api/sites/{site_id}/preview", response_class=HTMLResponse)
+async def preview_selector(
+    site_id: int,
+    content_selector: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview what content will be extracted with given selector.
+    
+    Fetches first page of site and shows extracted content.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    try:
+        # Fetch first page
+        async with httpx.AsyncClient() as client:
+            response = await client.get(site.url, timeout=30)
+            html = response.text
+        
+        # Extract with selector
+        soup = BeautifulSoup(html, 'html.parser')
+        elements = soup.select(content_selector)
+        
+        if not elements:
+            return HTMLResponse(
+                """
+                <div class="preview-container">
+                    <div class="alert alert-error">
+                        No elements found with selector: <code>{}</code>
+                    </div>
+                </div>
+                """.format(content_selector)
+            )
+        
+        # Show preview
+        preview_html = """
+        <div class="preview-container">
+            <div class="preview-header">
+                <h4>Preview</h4>
+                <span class="badge">Found {} elements</span>
+            </div>
+            <div class="preview-content">
+                <code>{}</code>
+            </div>
+            <p class="form-helper">
+                Showing first element only. {} total found.
+            </p>
+        </div>
+        """.format(
+            len(elements),
+            elements[0].prettify()[:2000],
+            len(elements)
+        )
+        
+        return HTMLResponse(preview_html)
+        
+    except Exception as e:
+        return HTMLResponse(
+            """
+            <div class="preview-container">
+                <div class="alert alert-error">
+                    Error fetching page: {}
+                </div>
+            </div>
+            """.format(str(e))
+        )
+
+@app.get("/site/{domain}/config", response_class=HTMLResponse)
+async def site_config_page(
+    request: Request,
+    domain: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Site configuration page.
+    """
+    # Get the site
+    result = await db.execute(select(Site).where(Site.domain == domain))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Parse config from JSON
+    config_data = site.config if site.config else DEFAULT_CONFIG.dict()
+    config = SiteConfig(**config_data)
+    
+    return templates.TemplateResponse(
+        "config.html",
+        {
+            "request": request,
+            "site": site,
+            "config": config,
+            "message": request.query_params.get("message", ""),
+            "message_type": request.query_params.get("message_type", "info")
+        }
+    )
+
+
+@app.get("/api/sites/{site_id}/config")
+async def get_site_config(
+    site_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get site configuration.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Parse config from JSON
+    config_data = site.config if site.config else DEFAULT_CONFIG.dict()
+    config = SiteConfig(**config_data)
+    
+    return config.dict()
+
+
+@app.put("/api/sites/{site_id}/config")
+async def update_site_config(
+    site_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update site configuration.
+    
+    Accepts form data with configuration fields.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Get form data
+    form_data = await request.form()
+    form_dict = dict(form_data)
+    
+    # Handle checkboxes
+    form_dict["respect_robots_txt"] = form_dict.get("respect_robots_txt") == "true"
+    form_dict["auto_reindex"] = form_dict.get("auto_reindex") == "true"
+    
+    # Handle lists (split by newlines)
+    list_fields = ["exclude_selectors", "include_patterns", "exclude_patterns"]
+    for field in list_fields:
+        if field in form_dict and form_dict[field]:
+            # Split by newlines, strip whitespace, filter empty strings
+            items = [item.strip() for item in form_dict[field].split("\n") if item.strip()]
+            form_dict[field] = items
+        elif field not in form_dict:
+            form_dict[field] = []
+    
+    # Handle JSON fields
+    if "custom_headers" in form_dict and form_dict["custom_headers"]:
+        try:
+            form_dict["custom_headers"] = json.loads(form_dict["custom_headers"])
+        except json.JSONDecodeError:
+            # If not valid JSON, try to parse as key:value pairs
+            headers = {}
+            for line in form_dict["custom_headers"].split("\n"):
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    headers[key.strip()] = value.strip()
+            form_dict["custom_headers"] = headers
+    
+    # Get existing config as base
+    existing_config = site.config if site.config else DEFAULT_CONFIG.dict()
+    existing_config.update(form_dict)
+    
+    # Validate the configuration
+    try:
+        config = SiteConfig(**existing_config)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid configuration: {str(e)}")
+    
+    # Update site config
+    site.config = config.dict()
+    await db.commit()
+    
+    # Return success response
+    return {"status": "success", "message": "Configuration updated successfully"}
+
+
+@app.post("/api/sites/{site_id}/preview", response_class=HTMLResponse)
+async def preview_selector(
+    site_id: int,
+    content_selector: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview what content will be extracted with given selector.
+    
+    Fetches first page of site and shows extracted content.
+    """
+    result = await db.execute(select(Site).where(Site.id == site_id))
+    site = result.scalar_one_or_none()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+    
+    try:
+        # Fetch first page
+        async with httpx.AsyncClient() as client:
+            response = await client.get(site.url, timeout=30)
+            html = response.text
+        
+        # Extract with selector
+        soup = BeautifulSoup(html, 'html.parser')
+        elements = soup.select(content_selector)
+        
+        if not elements:
+            return HTMLResponse(
+                """
+                <div class="preview-container">
+                    <div class="alert alert-error">
+                        No elements found with selector: <code>{}</code>
+                    </div>
+                </div>
+                """.format(content_selector)
+            )
+        
+        # Show preview
+        preview_html = """
+        <div class="preview-container">
+            <div class="preview-header">
+                <h4>Preview</h4>
+                <span class="badge">Found {} elements</span>
+            </div>
+            <div class="preview-content">
+                <code>{}</code>
+            </div>
+            <p class="form-helper">
+                Showing first element only. {} total found.
+            </p>
+        </div>
+        """.format(
+            len(elements),
+            elements[0].prettify()[:2000],
+            len(elements)
+        )
+        
+        return HTMLResponse(preview_html)
+        
+    except Exception as e:
+        return HTMLResponse(
+            """
+            <div class="preview-container">
+                <div class="alert alert-error">
+                    Error fetching page: {}
+                </div>
+            </div>
+            """.format(str(e))
+        )
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_dashboard(
+    request: Request,
+    site_id: Optional[int] = Query(None, description="Filter by site ID"),
+    days: int = Query(30, description="Number of days to analyze", ge=1, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Analytics dashboard showing search query statistics.
+    """
+    # Get all sites for the filter dropdown
+    sites_result = await db.execute(select(Site).order_by(Site.domain))
+    sites = sites_result.scalars().all()
+    
+    # Get current site if filtering
+    current_site = None
+    if site_id:
+        site_result = await db.execute(select(Site).where(Site.id == site_id))
+        current_site = site_result.scalar_one_or_none()
+    
+    # Get analytics data
+    analytics_data = await Analytics.get_search_stats(db, site_id=site_id, days=days)
+    
+    # Get site comparison if not filtering by a specific site
+    sites_comparison = None
+    if not site_id:
+        sites_comparison = await Analytics.get_site_comparison(db, days=days)
+    
+    return templates.TemplateResponse(
+        "analytics.html",
+        {
+            "request": request,
+            "sites": sites,
+            "current_site": current_site,
+            "sites_comparison": sites_comparison,
+            "period_days": days,
+            **analytics_data
+        }
+    )
+
+
+@app.post("/api/analytics/cleanup")
+async def cleanup_old_queries(
+    days_to_keep: int = Query(90, description="Days of data to keep", ge=30, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Clean up old search queries to manage database size.
+    
+    Requires authentication in production.
+    """
+    deleted_count = await Analytics.cleanup_old_queries(db, days_to_keep=days_to_keep)
+    
+    return {
+        "status": "success",
+        "message": f"Deleted {deleted_count} old search queries",
+        "deleted_count": deleted_count
+    }
+
+
+@app.get("/analytics", response_class=HTMLResponse)
+async def analytics_dashboard(
+    request: Request,
+    site_id: Optional[int] = Query(None, description="Filter by site ID"),
+    days: int = Query(30, description="Number of days to analyze", ge=1, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Analytics dashboard showing search query statistics.
+    """
+    # Get all sites for the filter dropdown
+    sites_result = await db.execute(select(Site).order_by(Site.domain))
+    sites = sites_result.scalars().all()
+    
+    # Get current site if filtering
+    current_site = None
+    if site_id:
+        site_result = await db.execute(select(Site).where(Site.id == site_id))
+        current_site = site_result.scalar_one_or_none()
+    
+    # Get analytics data
+    analytics_data = await Analytics.get_search_stats(db, site_id=site_id, days=days)
+    
+    # Get site comparison if not filtering by a specific site
+    sites_comparison = None
+    if not site_id:
+        sites_comparison = await Analytics.get_site_comparison(db, days=days)
+    
+    return templates.TemplateResponse(
+        "analytics.html",
+        {
+            "request": request,
+            "sites": sites,
+            "current_site": current_site,
+            "sites_comparison": sites_comparison,
+            "period_days": days,
+            **analytics_data
+        }
+    )
+
+
+@app.post("/api/analytics/cleanup")
+async def cleanup_old_queries(
+    days_to_keep: int = Query(90, description="Days of data to keep", ge=30, le=365),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Clean up old search queries to manage database size.
+    
+    Requires authentication in production.
+    """
+    deleted_count = await Analytics.cleanup_old_queries(db, days_to_keep=days_to_keep)
+    
+    return {
+        "status": "success",
+        "message": f"Deleted {deleted_count} old search queries",
+        "deleted_count": deleted_count
+    }

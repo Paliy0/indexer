@@ -11,7 +11,7 @@ Tests the scrape_site_task with mocked dependencies:
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch, call
-from datetime import datetime
+from datetime import datetime, timedelta
 from celery.exceptions import MaxRetriesExceededError
 
 from app.tasks import scrape_site_task, _scrape_site_async
